@@ -110,4 +110,15 @@ try {
 
 $kb = [math]::Round((Get-Item -LiteralPath $Out).Length / 1KB, 1)
 Write-Host "Wrote $Out ($kb KB, sizes: $($sizes -join ', '))"
+
+# ── הנכס שבתוך התוכנה ────────────────────────────────────────────────────────
+# `AppTitleBar` מציג את אותו אייקון לצד שם התוכנה. הוא נכתב **מכאן** ולא
+# מועתק ביד, כדי שאייקון קובץ ההרצה והאייקון שבחלון לא ייפרדו: קודם ישב שם
+# הלוגו של אוצריא, וזה נראה כמו תוכנה אחרת מזו שלחצו עליה בשורת המשימות.
+$assetPng = Join-Path $projectRoot 'assets\images\app_icon.png'
+$png256 = ($pngs | Where-Object { $_.Size -eq 256 } | Select-Object -First 1)
+if (-not $png256) { throw 'No 256px rendition was produced.' }
+[System.IO.File]::WriteAllBytes($assetPng, $png256.Bytes)
+Write-Host "Wrote $assetPng ($([math]::Round($png256.Bytes.Length / 1KB, 1)) KB, 256px)"
+
 Write-Host 'Rebuild to pick it up:  flutter build windows --release ; .\windows_stub\package.ps1'

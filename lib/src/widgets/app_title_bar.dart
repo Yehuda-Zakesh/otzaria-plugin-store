@@ -7,7 +7,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../l10n/app_strings_scope.dart';
 import '../theme/theme_exports.dart';
 
 /// גובה השורה — זהה לאוצריא.
@@ -46,7 +45,6 @@ class AppTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final s = context.strings.shell;
 
     return Container(
       height: kAppTitleBarHeight,
@@ -67,11 +65,18 @@ class AppTitleBar extends StatelessWidget {
               ),
               child: Row(
                 children: [
+                  // אותו אייקון של קובץ ההרצה, ולא הלוגו של אוצריא שהיה
+                  // כאן בלאנצ'ר: מי שרואה את החלון צריך לזהות בו את אותה
+                  // תוכנה שהוא לחץ עליה בשורת המשימות.
+                  //
+                  // `assets/images/app_icon.png` מיוצר מ-`app_icon.ico`
+                  // ע"י `tool/make_app_icon.ps1` — מקור אחד לשניהם, כדי
+                  // שהם לא ייפרדו.
                   Image.asset(
-                    'assets/images/otzaria_logo.png',
+                    'assets/images/app_icon.png',
                     height: 24,
                     filterQuality: FilterQuality.medium,
-                    semanticLabel: s.otzariaLogoLabel,
+                    semanticLabel: appTitle,
                   ),
                   const SizedBox(width: AppTokens.spaceSM),
                   Text(
