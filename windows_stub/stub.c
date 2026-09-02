@@ -7,7 +7,7 @@
 //
 // הוא גם הצד השני של העדכון העצמי: הלאנצ'ר מחליף את ה-exe הזה בגרסה חדשה
 // (ראו `lib/src/self_update/`) ומריץ אותו עם `--after-update=<pid>`. ה-exe
-// החדש נושא payload חדש, מזהה שהמרקר `.ready` מחזיק גרסה אחרת, ומחלץ אותו
+// החדש נושא payload חדש, מזהה שהמרקר `.ready` מחזיק חתימה אחרת, ומחלץ אותו
 // **מעל** app-files הקיימת. `OtzariaData\` שבתוכה לא נוגעים בה בכלל — לא
 // מוחקים כלום, רק דורסים את מה שב-payload.
 
@@ -41,9 +41,16 @@ typedef struct {
 
 static const wchar_t kPayloadDir[] = L"app-files";
 static const wchar_t kTargetExe[] = L"otzaria_plugin_store.exe";
-// נכתב רק אחרי חילוץ שהצליח, ולכן חילוץ שנקטע באמצע לא ייראה שלם. מאז
-// העדכון העצמי הוא גם מחזיק את **גרסת ה-payload** שחולצה: מרקר עם גרסה
-// אחרת (או ריק, כמו זה שכתבו גרסאות קודמות) פירושו "יש לחלץ מחדש".
+// נכתב רק אחרי חילוץ שהצליח, ולכן חילוץ שנקטע באמצע לא ייראה שלם. הוא גם
+// מחזיק את **חתימת ה-payload** שחולצה (`PAYLOAD_STAMP_A`): חתימה אחרת (או
+// מרקר ריק) פירושה "יש לחלץ מחדש".
+//
+// ⚠️ **חתימה ולא מספר גרסה**, וזה תיקון של באג אמיתי: כאן המרקר החזיק את
+// גרסת ה-payload, ושתי בניות שונות של אותו מספר גרסה נראו לו זהות. exe חדש
+// עם אותו מספר — בנייה מקומית חוזרת, או תיקון שפורסם מחדש תחת אותה גרסה —
+// דילג על החילוץ והריץ את ה-app-files הישנה. זה קרה בפועל: אייקון שהוחלף
+// נשאר בתוך ה-exe ולא הגיע לתיקייה. החתימה נגזרת מתוכן ה-payload עצמו
+// (ראו `build_stub.ps1`), ולכן כל תוכן חדש מזוהה כחדש.
 static const wchar_t kReadyMarker[] = L".ready";
 
 // הדגל שהלאנצ'ר מעביר אחרי שהחליף את ה-exe. חייב להתאים ל-
@@ -448,9 +455,9 @@ static BOOL MarkerMatchesPayload(const wchar_t *marker) {
     return FALSE;
   }
   buffer[read] = '\0';
-  if (strcmp(buffer, PAYLOAD_VERSION_A) != 0) {
+  if (strcmp(buffer, PAYLOAD_STAMP_A) != 0) {
     LogLine(L"המרקר מחזיק '%hs' וה-payload הוא '%hs' — חילוץ מחדש", buffer,
-            PAYLOAD_VERSION_A);
+            PAYLOAD_STAMP_A);
     return FALSE;
   }
   return TRUE;
@@ -464,10 +471,10 @@ static BOOL WriteMarker(const wchar_t *marker) {
   if (file == INVALID_HANDLE_VALUE) {
     return FALSE;
   }
-  const DWORD length = (DWORD)strlen(PAYLOAD_VERSION_A);
+  const DWORD length = (DWORD)strlen(PAYLOAD_STAMP_A);
   DWORD written = 0;
   const BOOL ok =
-      WriteFile(file, PAYLOAD_VERSION_A, length, &written, NULL) &&
+      WriteFile(file, PAYLOAD_STAMP_A, length, &written, NULL) &&
       written == length;
   CloseHandle(file);
   return ok;

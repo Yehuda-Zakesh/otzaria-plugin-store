@@ -6,9 +6,11 @@ import 'package:otzaria_l10n/otzaria_l10n.dart';
 import 'package:path/path.dart' as p;
 
 import 'controllers/plugins_module_controller.dart';
+import 'controllers/store_update_controller.dart';
 import 'screens/plugins/plugins_screen.dart';
 import 'services/app_paths.dart';
 import 'services/otzaria_install_probe.dart';
+import 'services/url_opener.dart';
 import 'theme/theme_exports.dart';
 import 'widgets/widgets_exports.dart';
 
@@ -103,6 +105,7 @@ class StoreShell extends StatefulWidget {
 class _StoreShellState extends State<StoreShell> {
   late final OtzariaInstallProbe _otzaria;
   late final PluginsModuleController _plugins;
+  late final StoreUpdateController _storeUpdate;
   late final StreamSubscription<String> _installDone;
 
   @override
@@ -146,6 +149,12 @@ class _StoreShellState extends State<StoreShell> {
       if (mounted) unawaited(_plugins.refreshInstalled());
     }));
     unawaited(_plugins.load());
+
+    // בדיקת גרסה חדשה של החנות עצמה — בקשה אחת קלה ל-GitHub, והפעולה
+    // היחידה בתוכנה שיוצאת לרשת בלי שהמשתמש לחץ. כשל בה נבלע ונרשם ללוג,
+    // ולכן היא גם לא מעכבת שום דבר כאן.
+    _storeUpdate = StoreUpdateController()..addListener(_onChange);
+    unawaited(_storeUpdate.checkOnce());
   }
 
   @override
@@ -153,6 +162,8 @@ class _StoreShellState extends State<StoreShell> {
     unawaited(_installDone.cancel());
     _plugins.removeListener(_onChange);
     _plugins.dispose();
+    _storeUpdate.removeListener(_onChange);
+    _storeUpdate.dispose();
     super.dispose();
   }
 
@@ -168,6 +179,11 @@ class _StoreShellState extends State<StoreShell> {
             AppTitleBar(
               appTitle: context.strings.plugins.breadcrumbRoot,
               showWindowButtons: widget.showWindowButtons,
+            ),
+            // מחזיר גובה אפס כשאין גרסה חדשה — ראו [StoreUpdateBanner].
+            StoreUpdateBanner(
+              controller: _storeUpdate,
+              onOpen: () => UrlOpener.open(_storeUpdate.pageUrl),
             ),
             Expanded(
               child: PluginsScreen(

@@ -29,6 +29,9 @@ dependencies:
     path: packages/otzaria_manager
 
   path: ^1.9.1
+  # בדיקת גרסה חדשה של החנות מול GitHub API — בקשה אחת, מטא-דאטה בלבד,
+  # ראו `self_update/store_release_client.dart`.
+  http: ^1.6.0
   # דיאלוג "שמור עותק" של קובץ ה-.otzplugin.
   file_picker: ^8.1.2
   # אותה ספריית אייקונים כמו באוצריא ובלאנצ'ר — האייקונים היחידים שבשימוש.

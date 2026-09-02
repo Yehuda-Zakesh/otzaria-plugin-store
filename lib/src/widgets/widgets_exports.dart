@@ -16,4 +16,5 @@ export 'screen_body.dart';
 export 'segmented_control.dart';
 export 'settings_card.dart';
 export 'status_chip.dart';
+export 'store_update_banner.dart';
 export 'ui_snack.dart';

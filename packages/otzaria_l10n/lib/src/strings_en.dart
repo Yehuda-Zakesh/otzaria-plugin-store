@@ -40,6 +40,8 @@ class EnglishStrings extends AppStrings {
   @override
   LauncherUpdateStrings get launcherUpdate => const _LauncherUpdate();
   @override
+  StoreUpdateStrings get storeUpdate => const _StoreUpdate();
+  @override
   UnitStrings get units => const _Units();
   @override
   LibraryDomainStrings get libraryDomain => const _LibraryDomain();
@@ -1654,6 +1656,21 @@ class _LauncherUpdate extends LauncherUpdateStrings {
   String restartFailed(String error) =>
       'Launching the new version failed: $error. Please close the program and '
       'start it again manually — the replacement itself already finished.';
+}
+
+class _StoreUpdate extends StoreUpdateStrings {
+  const _StoreUpdate();
+
+  @override
+  String bannerTitle(String version) =>
+      'A new version of the Plugin Store is out — version $version';
+  @override
+  String get bannerButton => 'Go to download page';
+  @override
+  String get bannerDismissTooltip => 'Hide this notice';
+  @override
+  String openFailed(String url) =>
+      'Opening the browser failed. Download address: $url';
 }
 
 class _Units extends UnitStrings {

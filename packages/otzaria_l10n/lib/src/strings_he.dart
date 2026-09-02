@@ -39,6 +39,8 @@ class HebrewStrings extends AppStrings {
   @override
   LauncherUpdateStrings get launcherUpdate => const _LauncherUpdate();
   @override
+  StoreUpdateStrings get storeUpdate => const _StoreUpdate();
+  @override
   UnitStrings get units => const _Units();
   @override
   LibraryDomainStrings get libraryDomain => const _LibraryDomain();
@@ -1562,6 +1564,20 @@ class _LauncherUpdate extends LauncherUpdateStrings {
   String restartFailed(String error) =>
       'הפעלת הגרסה החדשה נכשלה: $error. יש לסגור את התוכנה ולהפעיל אותה '
       'מחדש ידנית — ההחלפה עצמה כבר הושלמה.';
+}
+
+class _StoreUpdate extends StoreUpdateStrings {
+  const _StoreUpdate();
+
+  @override
+  String bannerTitle(String version) =>
+      'יצאה גרסה חדשה של חנות התוספים — גרסה $version';
+  @override
+  String get bannerButton => 'לדף ההורדה';
+  @override
+  String get bannerDismissTooltip => 'הסתרת ההודעה';
+  @override
+  String openFailed(String url) => 'פתיחת הדפדפן נכשלה. הכתובת להורדה: $url';
 }
 
 class _Units extends UnitStrings {

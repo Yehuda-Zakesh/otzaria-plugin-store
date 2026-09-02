@@ -25,6 +25,12 @@ abstract class AppStrings {
   ElevationStrings get elevation;
   PayloadMismatchStrings get payloadMismatch;
   LauncherUpdateStrings get launcherUpdate;
+
+  /// ⚠️ סעיף שנוסף **בעותק הזה** של החבילה, ואינו קיים ב-
+  /// `Otzaria_Offline_update`: חנות התוספים העצמאית רק **מודיעה** על גרסה
+  /// חדשה, ולכן המלל של [LauncherUpdateStrings] (הורדה, התקנה, הפעלה
+  /// מחדש) אינו מתאים לה.
+  StoreUpdateStrings get storeUpdate;
   UnitStrings get units;
 
   // ── מלל שנוצר בחבילות התשתית ומוצג כמו שהוא ─────────────────────────────
@@ -935,6 +941,30 @@ abstract class LauncherUpdateStrings {
   String sizeMismatch(int received, int expected);
   String replaceFailed(String error);
   String restartFailed(String error);
+}
+
+// ── התראת גרסה חדשה של חנות התוספים ──────────────────────────────────────────
+//
+// ⚠️ סעיף שנוסף בעותק הזה של החבילה — ראו [AppStrings.storeUpdate].
+//
+// החנות העצמאית **אינה** מעדכנת את עצמה: היא בודקת אם יש release חדש
+// ופותחת את דף ההורדות בדפדפן. אין כאן הורדה, החלפת קובץ או הפעלה מחדש,
+// ולכן גם אין מלל לשלבים האלה.
+
+abstract class StoreUpdateStrings {
+  const StoreUpdateStrings();
+
+  /// שורת ההתראה שמופיעה מתחת לשורת הכותרת. [version] הוא מספר שלם.
+  String bannerTitle(String version);
+
+  /// הכפתור שפותח את דף ה-releases בדפדפן.
+  String get bannerButton;
+
+  /// הסתרת השורה עד ההרצה הבאה.
+  String get bannerDismissTooltip;
+
+  /// פתיחת הדפדפן נכשלה — הכתובת מוצגת כדי שאפשר יהיה להעתיק אותה ביד.
+  String openFailed(String url);
 }
 
 // ── יחידות ומספרים ────────────────────────────────────────────────────────────
