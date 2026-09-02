@@ -138,9 +138,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # ⚠️ `release-assets` ולא `assets`: בריפו הזה **יש** תיקיית `assets/`
+      # (הלוגו שנארז לתוך התוכנה), ההורדה נחתה לתוכה, ו-`gh release create`
+      # קיבל את `assets/images` — תיקייה — כנכס להעלאה ונכשל.
       - uses: actions/download-artifact@v4
         with:
-          path: assets
+          path: release-assets
           merge-multiple: true
       - name: Bump the version in the repository
         run: |
@@ -172,22 +175,25 @@ jobs:
       - name: Give the Windows asset an ASCII name
         run: |
           set -euo pipefail
-          exe="$(find assets -maxdepth 1 -name '*.exe' | head -1)"
+          exe="$(find release-assets -maxdepth 1 -name '*.exe' | head -1)"
           if [ -z "$exe" ]; then
             echo "::error::לא נמצא exe בארטיפקטים — release בלי הקובץ גרוע מג'וב אדום"
             exit 1
           fi
-          if [ "$exe" != "assets/Otzaria-Plugin-Store.exe" ]; then
-            mv "$exe" assets/Otzaria-Plugin-Store.exe
+          if [ "$exe" != "release-assets/Otzaria-Plugin-Store.exe" ]; then
+            mv "$exe" release-assets/Otzaria-Plugin-Store.exe
           fi
+          # מה שנשאר שם חייב להיות קבצים בלבד — תיקייה נכשלת בהעלאה, וזה
+          # קרה בפועל כשהיעד היה `assets/`.
+          find release-assets -maxdepth 1 -mindepth 1 -type d -exec rm -rf {} +
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ls -la assets
+          ls -la release-assets
           # **יציב** ולא pre-release/draft: לקוח עדכון עצמי (אם וכאשר יתווסף)
           # פוסל את שניהם, וגם הורדה ידנית מ-"Latest" לא מוצאת draft.
           gh release create "${{ needs.version.outputs.tag }}" \
             --title "גרסה ${{ needs.version.outputs.version }}" \
             --generate-notes \
-            assets/*
+            release-assets/*
