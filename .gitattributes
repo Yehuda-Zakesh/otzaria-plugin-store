@@ -1,0 +1,9 @@
+* text=auto
+
+# סקריפטי האריזה נשמרים UTF-8 **עם BOM** כדי ש-PowerShell 5.1 תקרא את העברית
+# שבהם נכון. BOM אינו נפגע מנרמול שורות, אבל הסימון כאן מונע כל טיפול אחר.
+*.ps1 text working-tree-encoding=UTF-8 eol=crlf
+
+# ה-payload והאייקון בינאריים.
+*.ico binary
+*.png binary

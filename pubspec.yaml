@@ -1,0 +1,49 @@
+name: otzaria_plugin_store
+description: >-
+  חנות התוספים של אוצריא כאפליקציה עצמאית — שכפול של מסך החנות שבתוך
+  "עדכוני אוצריא" (launcher_app), בלי מודול התוכנה, בלי הספרייה ובלי
+  ההגדרות. מסנכרנת את הקטלוג מ-otzaria.org אל תיקיית מראה מקומית שלצד
+  קובץ ההרצה, מזהה אילו תוספים מותקנים באוצריא שבמחשב, ומתקינה דרך
+  הפרוטוקול otzaria://.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.2.6 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # שלוש החבילות של הריפו המקורי, מועתקות כמו שהן תחת `packages/` — כך
+  # שהאפליקציה עומדת בפני עצמה ואינה תלויה בעץ של Otzariya_update.
+  otzaria_l10n:
+    path: packages/otzaria_l10n
+  plugins_manager:
+    path: packages/plugins_manager
+  # נדרש לדבר אחד בלבד: לזהות איפה אוצריא מותקנת ובאיזו גרסה, כדי
+  # שהחנות תציג ותתקין את הבילד התואם — ראו `services/otzaria_install_probe.dart`.
+  otzaria_manager:
+    path: packages/otzaria_manager
+
+  path: ^1.9.1
+  # דיאלוג "שמור עותק" של קובץ ה-.otzplugin.
+  file_picker: ^8.1.2
+  # אותה ספריית אייקונים כמו באוצריא ובלאנצ'ר — האייקונים היחידים שבשימוש.
+  fluentui_system_icons: ^1.1.249
+  # שורת כותרת מותאמת (כמו בלאנצ'ר ובאוצריא), וגם החזרת מיקוד המקלדת
+  # לחלון אחרי דיאלוג קבצים — ראו `services/native_file_dialogs.dart`.
+  window_manager: ^0.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/

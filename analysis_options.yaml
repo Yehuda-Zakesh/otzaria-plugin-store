@@ -1,0 +1,14 @@
+# אותם כללים כמו ב-`launcher_app/analysis_options.yaml`, כדי שקוד שהועתק
+# משם ימשיך לעבור את אותה בדיקה בדיוק.
+include:
+  - package:flutter_lints/flutter.yaml
+  # ההידוקים המשותפים — ראו את ההסבר בקובץ עצמו.
+  - analysis_options_shared.yaml
+
+analyzer:
+  # לכל חבילה תחת `packages/` יש analysis_options משלה (`lints` ולא
+  # `flutter_lints`) — היא נבדקת מתוכה ולא מכאן.
+  exclude:
+    - packages/**
+    - build/**
+    - windows/**

@@ -1,0 +1,720 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria_l10n/otzaria_l10n.dart';
+import 'package:otzaria_plugin_store/src/controllers/plugins_module_controller.dart';
+import 'package:otzaria_plugin_store/src/services/app_logger.dart';
+import 'package:path/path.dart' as p;
+import 'package:plugins_manager/plugins_manager.dart';
+
+import 'test_support.dart';
+
+/// בדיקות ל-[PluginsModuleController] — הכול מהמראה המקומית, תחת חסימת
+/// רשת מלאה. `load` חייב לעבוד בלי רשת; `sync` היא הפעולה היחידה שדורשת
+/// אותה, וכשלונה הוא מצב שגיאה מוצג ולא קריסה.
+void main() {
+  late Directory tempDir;
+  late PluginsModuleController controller;
+
+  StorePlugin plugin(
+    String id,
+    String name, {
+    String status = 'stable',
+    String version = '1.0.0',
+    List<String> tags = const [],
+    bool featured = false,
+    String shortDescription = '',
+    String author = '',
+    String? manifestId,
+  }) =>
+      StorePlugin.fromApi({
+        'id': id,
+        'name': name,
+        'status': status,
+        'version': version,
+        'tags': tags,
+        'isPinned': featured,
+        'shortDescription': shortDescription,
+        'author': author,
+      }, 'https://otzaria.org')
+          .copyWith(manifestId: manifestId);
+
+  Future<void> saveCatalog(PluginCatalog catalog) =>
+      PluginMirrorStore(p.join(tempDir.path, 'mirror')).save(catalog);
+
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp('plugins-ctrl-');
+    HttpOverrides.global = NoNetworkHttpOverrides();
+    AppLogger.resetForTest();
+    await AppLogger.init(tempDir.path);
+    controller =
+        PluginsModuleController(mirrorRootDir: p.join(tempDir.path, 'mirror'));
+    AppL10n.use(AppLanguage.hebrew);
+  });
+
+  tearDown(() async {
+    controller.dispose();
+    HttpOverrides.global = null;
+    AppL10n.use(AppLanguage.hebrew);
+    await AppLogger.maybeInstance?.flush();
+    AppLogger.resetForTest();
+    await deleteTempDir(tempDir);
+  });
+
+  group('load — מהמראה בלבד', () {
+    test('מראה ריקה: קטלוג ריק, מצב ready, בלי שגיאה', () async {
+      await controller.load();
+
+      expect(controller.status, PluginsModuleStatus.ready);
+      expect(controller.errorMessage, isNull);
+      expect(controller.plugins, isEmpty);
+      expect(controller.categories, isEmpty);
+      expect(controller.lastSync, isNull);
+      expect(controller.pluginsDir, p.join(tempDir.path, 'mirror', 'plugins'));
+    });
+
+    test('בלי אצירה אין דף בית — נפתחת ישר "כל התוספים"', () async {
+      await saveCatalog(PluginCatalog(plugins: [plugin('a', 'תוסף')]));
+
+      await controller.load();
+
+      expect(controller.hasCuratedHome, isFalse);
+      expect(controller.view, PluginStorePage.all);
+    });
+
+    test('יש אצירה — נשארים בדף הבית', () async {
+      await saveCatalog(PluginCatalog(
+        plugins: [plugin('a', 'תוסף נבחר', featured: true)],
+        home: const PluginStoreHome(title: 'החנות', subtitle: 'תקציר'),
+      ));
+
+      await controller.load();
+
+      expect(controller.hasCuratedHome, isTrue);
+      expect(controller.view, PluginStorePage.home);
+      expect(controller.homeTitle, 'החנות');
+      expect(controller.homeSubtitle, 'תקציר');
+    });
+
+    test('קטגוריה שנעלמה מהחנות אינה נשארת פתוחה', () async {
+      await saveCatalog(PluginCatalog(
+        plugins: [plugin('a', 'תוסף')],
+        categories: const [PluginStoreCategory(slug: 'study', name: 'לימוד')],
+      ));
+      await controller.load();
+      controller.showCategory('study');
+      expect(controller.view, PluginStorePage.category);
+
+      await saveCatalog(PluginCatalog(plugins: [plugin('a', 'תוסף')]));
+      await controller.load();
+
+      expect(controller.view, PluginStorePage.all);
+      expect(controller.openCategorySlug, isNull);
+      expect(controller.openCategory, isNull);
+    });
+  });
+
+  group('סינון', () {
+    setUp(() async {
+      await saveCatalog(PluginCatalog(
+        plugins: [
+          plugin('a', 'מפתח ראשי',
+              tags: ['לימוד'], author: 'שרה', shortDescription: 'תקציר א'),
+          plugin('b', 'תוסף בטא', status: 'beta', tags: ['עיצוב']),
+          plugin('c', 'תוסף ניסיוני', status: 'experimental'),
+        ],
+      ));
+      await controller.load();
+      // ההתקנה האמיתית של המכונה המריצה לא אמורה להשפיע על התוצאה.
+      controller.installed = const {};
+    });
+
+    test('בלי סינון — הכול, כולל בטא וניסיוני', () {
+      expect(controller.filtered.map((p) => p.id), ['a', 'b', 'c']);
+    });
+
+    test('חיפוש חופשי מתאים לשם, לתקציר, למחבר ולתגיות', () {
+      controller.setSearch('שרה');
+      expect(controller.filtered.map((p) => p.id), ['a']);
+
+      controller.setSearch('לימוד');
+      expect(controller.filtered.map((p) => p.id), ['a']);
+
+      controller.setSearch('תקציר א');
+      expect(controller.filtered.map((p) => p.id), ['a']);
+
+      controller.setSearch('   ');
+      expect(controller.filtered, hasLength(3));
+    });
+
+    test('סינון סטטוס', () {
+      controller.setStatusFilter(PluginStatusFilter.beta);
+      expect(controller.filtered.map((p) => p.id), ['b']);
+
+      controller.setStatusFilter(PluginStatusFilter.all);
+      expect(controller.filtered, hasLength(3));
+    });
+
+    test('סינון תגית, וכל התגיות ממוינות', () {
+      expect(controller.allTags, ['לימוד', 'עיצוב']);
+
+      controller.setTagFilter('עיצוב');
+      expect(controller.filtered.map((p) => p.id), ['b']);
+
+      controller.setTagFilter(null);
+      expect(controller.filtered, hasLength(3));
+    });
+
+    test('הצבת אותו ערך אינה מודיעה למאזינים', () {
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+
+      controller.setSearch('');
+      controller.setStatusFilter(PluginStatusFilter.all);
+      controller.setTagFilter(null);
+      controller.setHideInstalled(controller.hideInstalled);
+
+      expect(notifications, 0);
+    });
+
+    test('שינוי סינון מודיע ומרענן את התוצר המחושב', () {
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+
+      expect(controller.filtered, hasLength(3));
+      controller.setSearch('בטא');
+
+      expect(notifications, 1);
+      expect(controller.filtered, hasLength(1));
+    });
+  });
+
+  group('זיהוי מותקנים — לפי manifestId, לא לפי מזהה הקטלוג', () {
+    setUp(() async {
+      await saveCatalog(PluginCatalog(
+        plugins: [
+          plugin('db-1', 'מותקן ומעודכן',
+              version: '1.0.0', manifestId: 'com.example.one'),
+          plugin('db-2', 'מותקן וישן',
+              version: '2.0.0', manifestId: 'com.example.two'),
+          plugin('db-3', 'לא מותקן',
+              version: '1.0.0', manifestId: 'com.example.three'),
+          plugin('db-4', 'קובץ טרם ירד'),
+        ],
+      ));
+      await controller.load();
+    });
+
+    test('ההשוואה היא מול manifestId — מזהה הקטלוג אינו מזוהה כמותקן', () {
+      controller.installed = const {'db-1': '1.0.0'};
+
+      expect(
+        controller.statusOf(controller.byId('db-1')!),
+        PluginInstallStatus.notInstalled,
+      );
+    });
+
+    test('מותקן/עדכון/לא מותקן/לא ידוע', () {
+      controller.installed = const {
+        'com.example.one': '1.0.0',
+        'com.example.two': '1.5.0',
+      };
+
+      expect(controller.statusOf(controller.byId('db-1')!),
+          PluginInstallStatus.upToDate);
+      expect(controller.statusOf(controller.byId('db-2')!),
+          PluginInstallStatus.updateAvailable);
+      expect(controller.statusOf(controller.byId('db-3')!),
+          PluginInstallStatus.notInstalled);
+      // תוסף שקובץ ה-.otzplugin שלו טרם ירד — מצב תקין, לא שגיאה.
+      expect(controller.statusOf(controller.byId('db-4')!),
+          PluginInstallStatus.unknown);
+
+      expect(controller.updatablePlugins.map((p) => p.id), ['db-2']);
+      expect(controller.installedVersionOf(controller.byId('db-2')!), '1.5.0');
+      expect(controller.installedVersionOf(controller.byId('db-4')!), isNull);
+      expect(controller.installedCount, 2);
+    });
+
+    test('מתג "רק מה שלא מותקן" מסתיר את המעודכן בלבד', () {
+      controller.installed = const {
+        'com.example.one': '1.0.0',
+        'com.example.two': '1.5.0',
+      };
+
+      expect(controller.hideInstalled, isTrue);
+      expect(controller.filtered.map((p) => p.id), ['db-2', 'db-3', 'db-4']);
+
+      controller.setHideInstalled(false);
+      expect(controller.filtered, hasLength(4));
+    });
+  });
+
+  group('אצירה — נבחרים, קטגוריות ודף הבית', () {
+    setUp(() async {
+      await saveCatalog(PluginCatalog(
+        plugins: [
+          plugin('a', 'ראשון', featured: true, manifestId: 'm.a'),
+          plugin('b', 'שני', manifestId: 'm.b'),
+          plugin('c', 'שלישי', manifestId: 'm.c'),
+        ],
+        categories: const [
+          PluginStoreCategory(
+            slug: 'study',
+            name: 'כלי לימוד',
+            description: 'תיאור',
+            showOnHome: true,
+            homeLimit: 2,
+            pluginIds: ['a', 'b', 'c', 'לא-קיים'],
+          ),
+          PluginStoreCategory(
+            slug: 'hidden',
+            name: 'לא בדף הבית',
+            pluginIds: ['c'],
+          ),
+        ],
+      ));
+      await controller.load();
+      controller.installed = const {};
+    });
+
+    test('נבחרים בסדר הקטלוג, קטגוריות דף-הבית ומגבלת השורה', () {
+      expect(controller.featured.map((p) => p.id), ['a']);
+      expect(controller.homeCategories.map((c) => c.slug), ['study']);
+
+      final category = controller.categoryBySlug('study')!;
+      expect(controller.pluginsIn(category).map((p) => p.id), ['a', 'b', 'c']);
+      expect(
+        controller
+            .pluginsIn(category, limit: category.homeLimit)
+            .map((p) => p.id),
+        ['a', 'b'],
+      );
+      expect(controller.categoryName('study'), 'כלי לימוד');
+      // slug לא מוכר מחזיר את עצמו, ולא נופל.
+      expect(controller.categoryName('אין-כזו'), 'אין-כזו');
+    });
+
+    // התוצרים ממוזנים, ולכן קריאה **לפני** שינוי מצב חייבת להתבטל אחריו.
+    // בלי זה דף הבית היה נשאר על התשובה של הטעינה הראשונה.
+    test('homeCategories מתעדכן אחרי שינוי מצב, ולא נשאר על cache', () {
+      expect(controller.homeCategories.map((c) => c.slug), ['study']);
+
+      // הצבה ישירה ל-installed — כל התוספים מותקנים ומעודכנים.
+      controller.installed = const {
+        'm.a': '1.0.0',
+        'm.b': '1.0.0',
+        'm.c': '1.0.0'
+      };
+      expect(controller.homeCategories, isEmpty);
+
+      // כיבוי המתג מחזיר אותן, למרות שכבר נקרא פעמיים לפני כן.
+      controller.setHideInstalled(false);
+      expect(controller.homeCategories.map((c) => c.slug), ['study']);
+    });
+
+    test('hasCuratedHome נמדד על המבנה — גם כשהמתג ריקן את הכרטיסים', () {
+      controller.installed = const {
+        'm.a': '1.0.0',
+        'm.b': '1.0.0',
+        'm.c': '1.0.0'
+      };
+
+      expect(controller.featured, isEmpty);
+      expect(controller.homeCategories, isEmpty);
+      // ובכל זאת יש דף בית — אחרת כיבוי הכרטיסים היה נראה כחנות ריקה.
+      expect(controller.hasCuratedHome, isTrue);
+    });
+  });
+
+  group('ניווט בין מסכי החנות', () {
+    setUp(() async {
+      await saveCatalog(PluginCatalog(
+        plugins: [plugin('a', 'תוסף', featured: true)],
+        categories: const [
+          PluginStoreCategory(slug: 'study', name: 'לימוד', pluginIds: ['a']),
+        ],
+      ));
+      await controller.load();
+    });
+
+    test('מעבר לקטגוריה ובחזרה מנקה את ה-slug', () {
+      controller.showCategory('study');
+      expect(controller.view, PluginStorePage.category);
+      expect(controller.openCategory?.name, 'לימוד');
+
+      controller.showHome();
+      expect(controller.view, PluginStorePage.home);
+      expect(controller.openCategorySlug, isNull);
+    });
+
+    test('חיפוש מה-hero מוביל ל"כל התוספים" עם המילה בתיבה', () {
+      controller.showAllPlugins(query: 'תוסף');
+
+      expect(controller.view, PluginStorePage.all);
+      expect(controller.search, 'תוסף');
+    });
+
+    test('מעבר בלי query אינו מוחק חיפוש קיים', () {
+      controller.setSearch('קיים');
+      controller.showAllPlugins();
+
+      expect(controller.search, 'קיים');
+    });
+  });
+
+  group('נכסים וכותרות', () {
+    test('assetPath מרכיב נתיב מוחלט, ומחזיר null כשאין נכס', () async {
+      await controller.load();
+
+      expect(controller.assetPath(null), isNull);
+      expect(controller.assetPath(''), isNull);
+      expect(
+        controller.assetPath('files/a.png'),
+        p.join(tempDir.path, 'mirror', 'plugins', 'files', 'a.png'),
+      );
+    });
+
+    test('כותרת ברירת המחדל מגיעה מ-otzaria_l10n בשתי השפות', () async {
+      await controller.load();
+
+      expect(
+          controller.homeTitle, AppL10n.strings.plugins.catalogTitleFallback);
+      expect(controller.homeSubtitle,
+          AppL10n.strings.plugins.catalogSubtitleFallback);
+
+      AppL10n.use(AppLanguage.english);
+      expect(
+          controller.homeTitle, AppL10n.strings.plugins.catalogTitleFallback);
+      expect(controller.homeTitle, isNot(contains('אוצריא')));
+    });
+
+    test('byId מחזיר null למזהה שאינו בקטלוג', () async {
+      await controller.load();
+
+      expect(controller.byId('אין-כזה'), isNull);
+    });
+  });
+
+  group('תיקיית התוספים נגזרת מההתקנה שזוהתה', () {
+    const pluginId = 'launcher-test-plugin';
+    late String exe;
+    String? launchPath;
+
+    PluginsModuleController portableController() {
+      final c = PluginsModuleController(
+        mirrorRootDir: p.join(tempDir.path, 'mirror'),
+        otzariaLaunchPath: () async => launchPath,
+      );
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    setUp(() {
+      // התקנה ניידת של אוצריא: קובץ הרצה, קובץ הסימון, ותיקיית הנתונים
+      // שלידם — בדיוק המבנה שבו `%APPDATA%` אינו רלוונטי.
+      final dir = p.join(tempDir.path, 'ניידת');
+      exe = p.join(dir, 'otzaria.exe');
+      File(exe).createSync(recursive: true);
+      File(p.join(dir, InstalledPluginsScanner.portableMarkerFileName))
+          .writeAsStringSync('');
+      File(p.join(
+        dir,
+        InstalledPluginsScanner.portableDataFolderName,
+        'plugins',
+        'installed',
+        pluginId,
+        'current',
+        'manifest.json',
+      ))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"id":"$pluginId","version":"1.4.0"}');
+      launchPath = null;
+    });
+
+    test('load קורא את התוספים של ההתקנה הניידת', () async {
+      launchPath = exe;
+      final c = portableController();
+
+      await c.load();
+
+      expect(c.installed, {pluginId: '1.4.0'});
+    });
+
+    test('refreshInstalled סורק מחדש אחרי שנתיב ההתקנה התברר', () async {
+      final c = portableController();
+      await c.load();
+      // לפני הזיהוי אין נתיב, והסריקה נפלה לברירת המחדל של הפלטפורמה.
+      expect(c.installed.containsKey(pluginId), isFalse);
+
+      launchPath = exe;
+      await c.refreshInstalled();
+
+      expect(c.installed[pluginId], '1.4.0');
+      expect(c.status, PluginsModuleStatus.ready);
+    });
+
+    test('refreshInstalled בזמן טעינה ממתינה לה ולא מדלגת', () async {
+      launchPath = exe;
+      final c = portableController();
+
+      final loading = c.load();
+      await Future.wait([loading, c.refreshInstalled()]);
+
+      expect(c.installed[pluginId], '1.4.0');
+    });
+  });
+
+  group('סיום ההתקנה באוצריא מזוהה מאליו', () {
+    const manifestId = 'launcher-fresh-plugin';
+    late String exe;
+    late String installedDir;
+
+    PluginsModuleController watching({Duration? timeout}) {
+      final c = PluginsModuleController(
+        mirrorRootDir: p.join(tempDir.path, 'mirror'),
+        otzariaLaunchPath: () async => exe,
+        installWatchInterval: const Duration(milliseconds: 10),
+        installWatchTimeout: timeout ?? const Duration(minutes: 5),
+      );
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    /// מה שאוצריא כותבת לדיסק כשהיא מסיימת להתקין.
+    void otzariaFinishes(String version) {
+      File(p.join(installedDir, manifestId, 'current', 'manifest.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"id":"$manifestId","version":"$version"}');
+    }
+
+    setUp(() {
+      final dir = p.join(tempDir.path, 'ניידת-המתנה');
+      exe = p.join(dir, 'otzaria.exe');
+      File(exe).createSync(recursive: true);
+      File(p.join(dir, InstalledPluginsScanner.portableMarkerFileName))
+          .writeAsStringSync('');
+      installedDir = p.join(dir, InstalledPluginsScanner.portableDataFolderName,
+          'plugins', 'installed');
+      Directory(installedDir).createSync(recursive: true);
+    });
+
+    test('הסריקה החוזרת מזהה את ההתקנה ומודיעה עליה, בלי בדיקה ידנית',
+        () async {
+      final c = watching();
+      await c.load();
+      final target = plugin('חדש', 'תוסף חדש', manifestId: manifestId);
+
+      final announced = c.installCompletions.first;
+      c.watchForInstall(target);
+      expect(c.isAwaitingInstallOf(target), isTrue);
+
+      otzariaFinishes('2.0.0');
+
+      expect(await announced, 'תוסף חדש');
+      expect(c.installed[manifestId], '2.0.0');
+      expect(c.isAwaitingInstall, isFalse);
+    });
+
+    test('גם עדכון מזוהה — הגרסה שעל הדיסק היא שהשתנתה', () async {
+      otzariaFinishes('1.0.0');
+      final c = watching();
+      await c.load();
+      final target = plugin('חדש', 'תוסף', manifestId: manifestId);
+
+      final announced = c.installCompletions.first;
+      c.watchForInstall(target);
+      otzariaFinishes('1.1.0');
+
+      expect(await announced, 'תוסף');
+      expect(c.installed[manifestId], '1.1.0');
+    });
+
+    test('פסק זמן סוגר את ההמתנה בלי להודיע על הצלחה', () async {
+      final c = watching(timeout: Duration.zero);
+      await c.load();
+      var announced = false;
+      c.installCompletions.listen((_) => announced = true);
+
+      c.watchForInstall(plugin('חדש', 'תוסף', manifestId: manifestId));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(c.isAwaitingInstall, isFalse);
+      expect(announced, isFalse);
+    });
+
+    test('תוסף בלי מזהה מניפסט אינו נכנס להמתנה', () async {
+      final c = watching();
+      await c.load();
+
+      c.watchForInstall(plugin('חדש', 'תוסף'));
+
+      expect(c.isAwaitingInstall, isFalse);
+    });
+  });
+
+  group('sync — הפעולה היחידה שדורשת רשת', () {
+    test('בלי חיבור: מצב שגיאה עם הודעה, בלי קריסה', () async {
+      await controller.sync();
+
+      expect(controller.status, PluginsModuleStatus.error);
+      expect(controller.errorMessage, isNotNull);
+      expect(controller.syncWarnings, isEmpty);
+    });
+  });
+
+  group('checkOnline — בדיקה קלה, כשל בה אינו שגיאה', () {
+    test('בלי חיבור: נרשמת הודעה, המצב אינו הופך לשגיאה', () async {
+      await controller.load();
+      await controller.checkOnline();
+
+      expect(controller.onlineCheckError, isNotNull);
+      expect(controller.onlineCheckedAt, isNotNull);
+      expect(controller.onlineStatus, isNull);
+      expect(controller.hasOnlineUpdate, isFalse);
+      // הבדיקה הקלה נפרדת ממצב החנות עצמה — היא לא הופכת אותה לשבורה.
+      expect(controller.status, PluginsModuleStatus.ready);
+      expect(controller.errorMessage, isNull);
+    });
+
+    test('ההצצה ממתינה לבדיקה המקומית לפני שהיא שואלת על הגרסאות', () async {
+      // הבדיקה המקומית והקלה יוצאות יחד בעלייה. תשובה לפני שהיא הסתיימה
+      // הייתה רשימת גרסאות ריקה, ואז ההצצה שואלת על הבילד החי של כל תוסף
+      // ומדווחת "חסר" על מה שההורדה לעולם לא תביא.
+      final calls = <String>[];
+      final c = PluginsModuleController(
+        mirrorRootDir: p.join(tempDir.path, 'mirror'),
+        ensureAppVersionsKnown: () async {
+          await Future<void>.delayed(Duration.zero);
+          calls.add('ensure');
+        },
+        mirroredAppVersions: () async {
+          calls.add('mirrored');
+          return const ['0.9.96'];
+        },
+        installedAppVersion: () async {
+          calls.add('installed');
+          return '0.9.96';
+        },
+      );
+      addTearDown(c.dispose);
+
+      await c.checkOnline();
+
+      expect(calls.first, 'ensure');
+      expect(calls, containsAll(['mirrored', 'installed']));
+    });
+
+    test('תוצאה עם חדשים/מעודכנים מדליקה את הדגל', () async {
+      controller.onlineStatus = const PluginsOnlineStatus(
+        newPlugins: ['תוסף חדש'],
+        totalOnline: 3,
+      );
+      expect(controller.hasOnlineUpdate, isTrue);
+
+      controller.onlineStatus = const PluginsOnlineStatus(
+        updatedPlugins: ['תוסף מעודכן'],
+        totalOnline: 3,
+      );
+      expect(controller.hasOnlineUpdate, isTrue);
+
+      controller.onlineStatus = PluginsOnlineStatus.empty;
+      expect(controller.hasOnlineUpdate, isFalse);
+    });
+
+    test('סנכרון שנכשל אינו מוחק את תוצאת הבדיקה', () async {
+      controller.onlineStatus =
+          const PluginsOnlineStatus(newPlugins: ['תוסף חדש']);
+
+      await controller.sync();
+
+      expect(controller.status, PluginsModuleStatus.error);
+      expect(controller.hasOnlineUpdate, isTrue);
+    });
+  });
+
+  group('בחירת בילד לפי גרסת אוצריא', () {
+    /// תוסף עם שני בילדים, ושני הקבצים כבר במראה — כמו כונן שהוריד עבור
+    /// הגרסה היציבה והלא-יציבה גם יחד.
+    StorePlugin versioned({Map<String, String> files = const {}}) =>
+        StorePlugin.fromApi(const {
+          'id': 'db-1',
+          'name': 'תוסף',
+          'version': '2.0.0',
+          'compatibleWith': '0.9.97',
+          'downloadUrl': '/api/plugins/db-1/download',
+          'versions': [
+            {
+              'version': '2.0.0',
+              'compatibleWith': '0.9.97',
+              'downloadUrl': '/api/plugins/db-1/download',
+              'isLatest': true,
+            },
+            {
+              'version': '1.5.0',
+              'compatibleWith': '0.9.95',
+              'downloadUrl': '/api/plugins/db-1@1.5.0/download',
+            },
+          ],
+        }, 'https://otzaria.org')
+            .copyWith(
+          manifestId: 'com.example.one',
+          localFiles: {
+            for (final entry in files.entries)
+              entry.key: PluginLocalFile(
+                relativePath: entry.value,
+                fileName: 'plugin.otzplugin',
+                ext: '.otzplugin',
+                size: 1,
+              ),
+          },
+        );
+
+    Future<PluginsModuleController> controllerFor(String? appVersion) async {
+      await saveCatalog(PluginCatalog(plugins: [
+        versioned(files: {
+          '2.0.0': 'files/db-1/plugin-2.0.0.otzplugin',
+          '1.5.0': 'files/db-1/plugin-1.5.0.otzplugin',
+        }),
+      ]));
+      final c = PluginsModuleController(
+        mirrorRootDir: p.join(tempDir.path, 'mirror'),
+        installedAppVersion: () async => appVersion,
+      );
+      addTearDown(c.dispose);
+      await c.load();
+      return c;
+    }
+
+    test('אותה מראה מציגה בילד אחר לכל גרסת אוצריא', () async {
+      final newer = await controllerFor('0.9.97');
+      expect(newer.versionOf(newer.plugins.single), '2.0.0');
+
+      final older = await controllerFor('0.9.96');
+      expect(older.versionOf(older.plugins.single), '1.5.0');
+      expect(older.hasFileFor(older.plugins.single), isTrue);
+    });
+
+    test('"מעודכן" נמדד מול הבילד שירוץ כאן, לא מול האחרון שפורסם', () async {
+      final c = await controllerFor('0.9.96');
+      c.installed = const {'com.example.one': '1.5.0'};
+
+      expect(c.statusOf(c.plugins.single), PluginInstallStatus.upToDate);
+      expect(c.updatablePlugins, isEmpty);
+    });
+
+    test('אין בילד תואם — incompatible, וזה לא שגיאה', () async {
+      final c = await controllerFor('0.9.80');
+
+      expect(c.statusOf(c.plugins.single), PluginInstallStatus.incompatible);
+      expect(c.targetOf(c.plugins.single), isNull);
+      expect(c.status, PluginsModuleStatus.ready);
+    });
+
+    test('בלי גרסה ידועה נבחר הבילד החי, כמו קודם', () async {
+      final c = await controllerFor(null);
+
+      expect(c.versionOf(c.plugins.single), '2.0.0');
+    });
+  });
+}
