@@ -5,7 +5,7 @@ description: >-
   ההגדרות. מסנכרנת את הקטלוג מ-otzaria.org אל תיקיית מראה מקומית שלצד
   קובץ ההרצה, מזהה אילו תוספים מותקנים באוצריא שבמחשב, ומתקינה דרך
   הפרוטוקול otzaria://.
-version: 2.0.0
+version: 3.0.0
 publish_to: none
 
 environment:
