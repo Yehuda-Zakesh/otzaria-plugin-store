@@ -64,11 +64,15 @@ class OtzariaInstallProbe {
       final check = await _manager.checkForUpdate();
       launchPath = check.currentState?.launchPath;
       version = check.currentState?.installedTagName;
-      AppLogger.instance.info(
-        launchPath == null
-            ? 'לא זוהתה התקנה של אוצריא במחשב הזה'
-            : 'אוצריא זוהתה: $launchPath (גרסה ${version ?? '?'})',
-      );
+      // שתי קריאות ולא תנאי בתוך אחת: `no_hardcoded_strings_test` מזהה
+      // הודעת-מפתח לפי `AppLogger.` שמופיע לפני המחרוזת, ובניסוח המקוצר
+      // הענף השני התרחק ממנו מדי ונראה כמלל למשתמש שנשכח בקוד.
+      if (launchPath == null) {
+        AppLogger.instance.info('לא זוהתה התקנה של אוצריא במחשב הזה');
+      } else {
+        AppLogger.instance
+            .info('אוצריא זוהתה: $launchPath (גרסה ${version ?? '?'})');
+      }
     } catch (e, st) {
       // אין כאן "מצב שגיאה" בממשק: החנות עובדת גם בלי לדעת מה מותקן.
       AppLogger.instance.error('זיהוי ההתקנה של אוצריא נכשל', e, st);

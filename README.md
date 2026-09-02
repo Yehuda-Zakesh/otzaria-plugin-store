@@ -51,10 +51,51 @@ flutter build windows --release
 ### בדיקות
 
 ```powershell
-flutter analyze                              # נקי
-flutter test                                 # 115 עוברות
-cd packages\plugins_manager; dart test       # 260 עוברות
+flutter analyze ; flutter test               # 117 עוברות
+cd packages\otzaria_l10n    ; dart analyze ; dart test   #  25
+cd packages\plugins_manager ; dart analyze ; dart test   # 260
+cd packages\otzaria_manager ; dart analyze ; dart test   # 266
 ```
+
+## גרסאות ופרסום
+
+**המספור הוא מספר שלם אחד: 1, 2, 3…** התג הוא `v1`, `v2`, וכן הלאה.
+
+הגרסה יושבת בשני קבצים שאינם יכולים לקרוא זה את זה — `pubspec.yaml` (ממנו
+`build_stub.ps1` צורב את מרקר ה-`.ready` ואת משאב הגרסה של ה-EXE) ו-
+`lib/src/app_version.dart` (מה שהתוכנה מדווחת ורושמת ללוג). `tool/set_version.sh`
+מציב את שניהם יחד, ו-`test/app_version_test.dart` נכשל אם הם נפרדו.
+
+`pubspec.yaml` מחזיק את **הגרסה שפורסמה לאחרונה**; `0` = עוד לא פורסם דבר.
+
+### מה ה-CI עושה
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — על כל push ו-PR:
+
+| ג'וב | מה |
+|---|---|
+| `version` | מחשב את המספר הבא: `max(pubspec, התג הגבוה) + 1` |
+| `packages` (×3) | `dart analyze` + `dart test` על שלוש החבילות, ב-ubuntu במקביל |
+| `app` | מציב את הגרסה, `flutter analyze` + `test` + `build windows`, ואורז ל-EXE |
+| `publish` | **רק ב-push ל-main שהכול עבר בו:** מקדם את הגרסה בריפו, מתייג, ומעלה release |
+
+שני דברים ששווה לדעת:
+
+* **`publish` אינו בונה מחדש** — הוא מפרסם את הארטיפקט של `app`, כך שמה
+  שמופץ הוא בדיוק מה שנבדק.
+* **התג נבדק פעמיים** — בתחילת הריצה ושוב לפני התיוג. אם התג נתפס בינתיים
+  הג'וב נכשל ברעש, כי לדרוס release קיים בקבצים של בנייה אחרת זו הפגיעה
+  הגרועה מכולן.
+* **נכס ה-release מקבל שם לטיני** (`Otzaria-Plugin-Store.exe`): גיטהאב מנקה
+  תווים שאינם ASCII משמות נכסים, ושם שכולו עברית היה מתפרסם כ-`default.exe`.
+  השם שעל הדיסק נשאר `חנות התוספים.exe`.
+
+[`build-exe.yml`](.github/workflows/build-exe.yml) הוא בנייה ידנית
+(`workflow_dispatch`) לארטיפקט בדיקה בלבד — בלי בדיקות ובלי פרסום.
+
+### לפרסם גרסה חדשה
+
+`git push` ל-`main`. זה הכול — אם הכול עבר, יש release חדש עם המספר הבא.
 
 ## איך זה עובד בהרצה
 
@@ -78,7 +119,7 @@ cd packages\plugins_manager; dart test       # 260 עוברות
 |---|---|---|
 | מסכים | 6 + סרגל ניווט | החנות בלבד |
 | הגדרות | מסך מלא (שפה, ערכת נושא, צבעים, גודל טקסט, מצב סייפר) | אין — לפי המערכת |
-| עדכון עצמי | יש | אין |
+| עדכון עצמי | יש — מוצא release ב-GitHub, מוריד ומחליף את ה-EXE בעצמו | **אין** — הורדה ידנית מדף ה-releases |
 | `PayloadCheck` | בודק ערמת קבצים לא-תואמת | אין — מרקר ה-`.ready` של ה-stub מכסה את מסלול העדכון |
 | גרסאות אוצריא לסנכרון | היציבה + הלא-יציבה שהכונן נושא | הגרסה שמותקנת במחשב הזה |
 | קובץ לוג | `logs\launcher.log` | `logs\plugin_store.log` |
