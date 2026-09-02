@@ -39,9 +39,13 @@ jobs:
             | head -1 | cut -d. -f1 | tr -d '[:space:]')"
           # `v1`, `v2`… תג שאינו בצורה הזאת (למשל `v0.1.0` מריפו אחר, או תג
           # ידני בשם `V1`) אינו נספר בכלל — `sort -n` היה מדרג אותו כמספר.
-          highest="$(git tag --list 'v[0-9]*' \
+          #
+          # ה-`|| true` אינו קוסמטי: `grep` בלי התאמות מחזיר 1, ועם
+          # `pipefail` זה הפיל את הצעד כולו בריפו שעוד אין בו תגים —
+          # כלומר בדיוק בפרסום הראשון.
+          highest="$( { git tag --list 'v[0-9]*' \
             | grep -E '^v[0-9]+$' \
-            | sed 's/^v//' | sort -n | tail -1)"
+            | sed 's/^v//' | sort -n | tail -1; } || true )"
           highest="${highest:-0}"
 
           next=$(( (current > highest ? current : highest) + 1 ))
