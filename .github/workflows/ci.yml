@@ -18,9 +18,9 @@ jobs:
   # ── מספר הגרסה של הריצה הזאת ────────────────────────────────────────────────
   # המספור הוא מספר שלם אחד: 1, 2, 3… (ראו `tool/set_version.sh`).
   #
-  # הבא בתור נגזר מ**התגים שכבר קיימים** ולא מ-pubspec לבדו: pubspec יכול
-  # להיות מאחור (למשל אחרי revert), ותג שנתפס פעמיים היה דורס release קיים
-  # בקבצים של בנייה אחרת.
+  # הבא בתור נגזר מ**התגים שכבר קיימים** ולא מ-`native/VERSION` לבדו:
+  # הקובץ יכול להיות מאחור (למשל אחרי revert), ותג שנתפס פעמיים היה דורס
+  # release קיים בקבצים של בנייה אחרת.
   version:
     name: next version
     runs-on: ubuntu-latest
@@ -34,9 +34,8 @@ jobs:
       - id: next
         run: |
           set -euo pipefail
-          # הגבוה שבין "מה שב-pubspec" ל"התג הגבוה שפורסם", ועוד אחד.
-          current="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml \
-            | head -1 | cut -d. -f1 | tr -d '[:space:]')"
+          # הגבוה שבין "מה שבקובץ" ל"התג הגבוה שפורסם", ועוד אחד.
+          current="$(tr -d '[:space:]' < native/VERSION)"
           # `v1`, `v2`… תג שאינו בצורה הזאת (למשל `v0.1.0` מריפו אחר, או תג
           # ידני בשם `V1`) אינו נספר בכלל — `sort -n` היה מדרג אותו כמספר.
           #
@@ -57,66 +56,72 @@ jobs:
 
           echo "version=$next" >> "$GITHUB_OUTPUT"
           echo "tag=v$next" >> "$GITHUB_OUTPUT"
-          echo "pubspec=$current, התג הגבוה=$highest → הגרסה הבאה היא $next (תג v$next)"
+          echo "VERSION=$current, התג הגבוה=$highest → הגרסה הבאה היא $next (תג v$next)"
 
-  # ── שלוש החבילות שהועתקו ────────────────────────────────────────────────────
-  # נבדקות בנפרד ועל ubuntu: הן Dart טהור, ואין טעם לשלם על windows-latest
-  # בשביל `dart test`. `windows_install_registry_test` ו-`running_otzaria_locator_test`
-  # מדלגות מעצמן על מה שדורש ווינדוס — הן נבדקות שוב בג'וב של הבנייה.
-  packages:
-    name: ${{ matrix.package }} (analyze + test)
+  # ── בדיקות הלוגיקה ──────────────────────────────────────────────────────────
+  # כל הלוגיקה של החנות היא JS, והבדיקות רצות על `node --test` המובנה —
+  # **בלי שום תלות npm**. ולכן גם על ubuntu: אין כאן דבר שתלוי בווינדוס
+  # (מה שכן תלוי בה יושב ב-host, ונבדק בבנייה שמתחת).
+  tests:
+    name: node --test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: [otzaria_l10n, plugins_manager, otzaria_manager]
     defaults:
       run:
-        working-directory: packages/${{ matrix.package }}
+        working-directory: native
     steps:
       - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
+      - uses: actions/setup-node@v4
         with:
-          sdk: stable
-      - run: dart pub get
-      - run: dart analyze
-      - run: dart test
+          node-version: "22"
+      - run: node --test
 
-  # ── האפליקציה: בדיקות, בנייה ואריזה ל-exe בודד ──────────────────────────────
-  app:
-    name: otzaria_plugin_store (analyze + test + package)
-    needs: version
+  # ── בנייה ואריזה ל-exe בודד ─────────────────────────────────────────────────
+  build:
+    name: windows build
+    needs: [version, tests]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      # לפני הכול: הגרסה של הריצה הזאת נכנסת ל-pubspec ול-app_version.dart,
-      # ומשם ל-exe עצמו (הלוג, המרקר `.ready`, משאב הגרסה).
+      # לפני הכול: הגרסה של הריצה הזאת נכנסת ל-`native/VERSION`, ומשם
+      # למשאב הגרסה של ה-exe ולמה שהתוכנה מדווחת על עצמה.
       - name: Set the release version
         shell: bash
         run: bash tool/set_version.sh "${{ needs.version.outputs.version }}"
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: flutter config --enable-windows-desktop
-      # ⚠️ **אין כאן `flutter create`.** תיקיית `windows/` מגורסאת בריפו
-      # ומותאמת (חלון מוגדל, כותרת עברית, אייקון, מאפייני קובץ), ו-
-      # `flutter create` היה דורס אותה בתבנית ברירת המחדל.
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
-      - run: flutter build windows --release
-      # אין מתקין — exe בודד ונייד: ה-stub נושא את ערמת הקבצים כ-resource
-      # ומחלץ אותה ל-app-files לידו בהרצה הראשונה, כי Flutter ל-Windows
-      # אינו מייצר exe יחיד בלאו הכי (ראו windows_stub/).
-      - name: Package portable build
+      # ⚠️ אין כאן התקנת SDK של שפה כלשהי: הבנייה היא `cl.exe` שמגיע עם
+      # windows-latest, וה-SDK של WebView2 מובא מ-nuget ע"י הסקריפט עצמו.
+      - name: Build
         shell: pwsh
-        run: .\windows_stub\package.ps1
-      # glob ולא השם המלא: הקובץ הוא "חנות התוספים.exe", ואין טעם לתלות את
-      # ה-workflow בקידוד של שם עברי.
+        run: .\native\build.ps1
+      # מאמת את ההבטחה המרכזית של הפרויקט: **קובץ אחד**, בלי DLL לידו
+      # ובלי תיקיית חילוץ. רגרסיה כאן שקטה לגמרי אחרת — ה-exe פשוט לא
+      # יעלה על מחשב שאין בו את מה שנשכח.
+      - name: Assert a single self-contained exe
+        shell: pwsh
+        run: |
+          $out = 'native\build'
+          $stray = Get-ChildItem $out -File |
+            Where-Object { $_.Extension -in '.dll', '.pdb' -or
+                           $_.Name -eq 'app-files' }
+          if ($stray) {
+            Write-Error "קבצים שאינם אמורים להתפרסם: $($stray.Name -join ', ')"
+            exit 1
+          }
+          $exe = Get-ChildItem $out -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { Write-Error 'לא נוצר exe'; exit 1 }
+          $mb = [math]::Round($exe.Length / 1MB, 2)
+          Write-Host "$($exe.Name) — $mb MB"
+          # תקרה רופפת בכוונה: היא כאן כדי לתפוס חזרה בשוגג לצירוף מנוע
+          # שלם (11.8MB בגרסת ה-Flutter), לא כדי לרדוף אחרי קילובייטים.
+          if ($mb -gt 5) {
+            Write-Error "ה-exe תפח ל-$mb MB — היעד הוא כמה MB בודדים"
+            exit 1
+          }
+      # glob ולא השם המלא: הקובץ הוא "חנות התוספים.exe", ואין טעם לתלות
+      # את ה-workflow בקידוד של שם עברי.
       - uses: actions/upload-artifact@v4
         with:
-          name: otzaria_plugin_store-windows-portable
-          path: build/*.exe
+          name: otzaria_plugin_store-windows
+          path: native/build/*.exe
           if-no-files-found: error
 
   # ── פרסום אוטומטי ───────────────────────────────────────────────────────────
@@ -127,7 +132,7 @@ jobs:
   # שמפורסם הוא בדיוק מה שנבדק.
   publish:
     name: publish release
-    needs: [version, packages, app]
+    needs: [version, tests, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # פרסום אחד בכל רגע: שתי דחיפות צמודות היו מנסות לתייג במקביל.
@@ -138,9 +143,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # ⚠️ `release-assets` ולא `assets`: בריפו הזה **יש** תיקיית `assets/`
-      # (הלוגו שנארז לתוך התוכנה), ההורדה נחתה לתוכה, ו-`gh release create`
-      # קיבל את `assets/images` — תיקייה — כנכס להעלאה ונכשל.
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
@@ -183,16 +185,16 @@ jobs:
           if [ "$exe" != "release-assets/Otzaria-Plugin-Store.exe" ]; then
             mv "$exe" release-assets/Otzaria-Plugin-Store.exe
           fi
-          # מה שנשאר שם חייב להיות קבצים בלבד — תיקייה נכשלת בהעלאה, וזה
-          # קרה בפועל כשהיעד היה `assets/`.
+          # מה שנשאר שם חייב להיות קבצים בלבד — תיקייה נכשלת בהעלאה.
           find release-assets -maxdepth 1 -mindepth 1 -type d -exec rm -rf {} +
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la release-assets
-          # **יציב** ולא pre-release/draft: לקוח עדכון עצמי (אם וכאשר יתווסף)
-          # פוסל את שניהם, וגם הורדה ידנית מ-"Latest" לא מוצאת draft.
+          # **יציב** ולא pre-release/draft: בדיקת הגרסה שבתוכנה פוסלת את
+          # שניהם (ראו `store_release_client.js`), וגם הורדה ידנית
+          # מ-"Latest" לא מוצאת draft.
           gh release create "${{ needs.version.outputs.tag }}" \
             --title "גרסה ${{ needs.version.outputs.version }}" \
             --generate-notes \

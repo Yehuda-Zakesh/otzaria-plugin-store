@@ -1,32 +1,27 @@
 name: Build EXE (no tests)
 
-# ריצה מהירה: רק בנייה ואריזה, בלי analyze/test. ה-CI המלא (ci.yml) רץ
-# בנפרד על כל push/PR והוא זה שמפרסם.
+# ריצה מהירה: רק בנייה, בלי הבדיקות. ה-CI המלא (ci.yml) רץ בנפרד על כל
+# push/PR והוא זה שמפרסם.
 #
-# ⚠️ זהו ארטיפקט לבדיקה בלבד. מה שמופץ למשתמשים נבנה ומפורסם ב-ci.yml, ורק
-# שם הגרסה מוצבת לפי הריצה — ה-exe שנוצר כאן נושא את המספר שכתוב ב-
-# `pubspec.yaml` ולא את מספר ה-release.
+# ⚠️ זהו ארטיפקט לבדיקה בלבד. מה שמופץ למשתמשים נבנה ומפורסם ב-ci.yml,
+# ורק שם מספר הגרסה מוצב לפי הריצה — ה-exe שנוצר כאן נושא את המספר
+# שכתוב ב-`native/VERSION` ולא את מספר ה-release.
 on:
   workflow_dispatch:
 
 jobs:
   build-exe:
-    name: windows build + package only
+    name: windows build only
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: flutter config --enable-windows-desktop
-      # אין `flutter create` — `windows/` מגורסאת ומותאמת. ראו ci.yml.
-      - run: flutter pub get
-      - run: flutter build windows --release
-      - name: Package portable build
+      # אין כאן התקנת SDK: `cl.exe` מגיע עם windows-latest, וה-SDK של
+      # WebView2 מובא מ-nuget ע"י הסקריפט עצמו.
+      - name: Build
         shell: pwsh
-        run: .\windows_stub\package.ps1
+        run: .\native\build.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: otzaria_plugin_store-windows-portable-dev
-          path: build/*.exe
+          name: otzaria_plugin_store-windows-dev
+          path: native/build/*.exe
           if-no-files-found: error

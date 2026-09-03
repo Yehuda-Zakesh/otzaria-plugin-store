@@ -1,0 +1,168 @@
+/* טוקני העיצוב — **נגזרו מגרסת ה-Flutter, לא נבחרו מחדש.**
+ *
+ * שתי ערכות הצבעים כאן הן הפלט המדויק של
+ * `ColorScheme.fromSeed(seedColor: …, brightness: …)` של Material 3, כפי
+ * ששפך אותן כלי חד-פעמי (`tool/dump_theme_test.dart`) לפני שה-Flutter
+ * הוסר. הזרעים הם אלה שהיו:
+ *
+ *   בהיר  #2C1B02  (AppSeedColors.darkBrown)
+ *   כהה   #9C27B0  (AppSeedColors.purple)
+ *
+ * ⚠️ **אין לערוך את הערכים ביד.** הפלטה של Material 3 נבנית במרחב HCT,
+ * וגוון שנבחר "בעין" יוצא מהמשפחה. אלה בדיוק אותם צבעים שהמשתמש רואה
+ * היום, וזו כל הנקודה: התוכנה הוחלפה מתחת, והמשתמש לא אמור להרגיש.
+ *
+ * המרווחים, הרדיוסים והטיפוגרפיה שמתחת הם פורט של
+ * `lib/src/theme/app_tokens.dart`.
+ */
+
+:root {
+  /* ── ערכה בהירה (seed #2C1B02) ─────────────────────────────────────────── */
+  --primary: #805610;
+  --on-primary: #ffffff;
+  --primary-container: #ffddb3;
+  --on-primary-container: #633f00;
+  --secondary: #6f5b40;
+  --on-secondary: #ffffff;
+  --secondary-container: #fbdebc;
+  --on-secondary-container: #56442a;
+  --tertiary: #51643f;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #d4eabb;
+  --on-tertiary-container: #3a4c2a;
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #93000a;
+  --surface: #fff8f4;
+  --on-surface: #201b13;
+  --on-surface-variant: #4f4539;
+  --surface-dim: #e4d8cc;
+  --surface-bright: #fff8f4;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #fff1e5;
+  --surface-container: #f9ecdf;
+  --surface-container-high: #f3e6da;
+  --surface-container-highest: #ede0d4;
+  --outline: #817567;
+  --outline-variant: #d3c4b4;
+  --inverse-surface: #362f27;
+  --on-inverse-surface: #fcefe2;
+  --inverse-primary: #f4bd6f;
+  --shadow: #000000;
+  --scrim: #000000;
+
+  /* `AppSurfaces.panelBackground` — alphaBlend של surfaceContainerHighest
+   * ב-47.5% מעל surface. חושב מראש ולא ב-CSS: זה ערך קבוע. */
+  --panel-bg: #f6ede5;
+
+  /* ── משטחים נגזרים (פורט של app_surfaces.dart) ─────────────────────────── */
+  /* הכרטיס: במצב בהיר זה `surface`, ובכהה `surfaceContainer`. */
+  --card-bg: var(--surface);
+  /* צל רך שמפריד את הכרטיס מרקע הלוח. במצב כהה אין צל בכלל — הרקע שחור
+   * ממילא, וצל עליו רק מלכלך את הפינות. */
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  /* קו ההפרדה של המסגרת — `outlineVariant` ב-60%. */
+  --shell-divider: color-mix(in srgb, var(--outline-variant) 60%, transparent);
+  /* רקע קטע-משנה ניטרלי בתוך כרטיס — `surfaceContainerHighest` ב-50%. */
+  --panel-section: color-mix(in srgb, var(--surface-container-highest) 50%, transparent);
+  /* שכבת בחירה לכרטיסים — `secondaryContainer` ב-30%. */
+  --card-selected: color-mix(in srgb, var(--secondary-container) 30%, transparent);
+  /* מחסום הדיאלוג — `AppColors.dialogBarrier` = 0x22000000. */
+  --dialog-barrier: rgba(0, 0, 0, 0.133);
+  --dialog-bg: var(--surface-container-high);
+
+  /* כוכב הדירוג. **קבוע ולא נגזר מה-seed**: זה `warning-500` של האתר,
+   * והדירוג אמור להיראות שם וכאן אותו דבר בכל ערכת צבעים. */
+  --rating-star: #f99c00;
+
+  /* שכבות ה-hover/pressed של Material — 8% ו-12%, כמו
+   * `AppThemeData._overlay`. */
+  --overlay-hover: 0.08;
+  --overlay-pressed: 0.12;
+
+  /* ── מרווחים (AppTokens) ───────────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* ── רדיוס — מקור אמת יחיד: כל הפינות 8 ────────────────────────────────── */
+  --radius: 8px;
+
+  /* ── טיפוגרפיה ─────────────────────────────────────────────────────────── */
+  --font-sm: 12px;
+  --font-md: 14px;
+  --font-lg: 16px;
+  --font-xl: 18px;
+  /* `bodyMedium` של הערכה היה 18px, וזה גודל הטקסט הרגיל בתוכנה. */
+  --font-body: 18px;
+
+  /* Segoe UI Variable היא הגופן של ווינדוס 11 ומכסה עברית היטב; Segoe UI
+   * היא הנפילה בווינדוס 10. גרסת ה-Flutter ביקשה 'Roboto' וקיבלה בפועל
+   * את גופן המערכת, ולכן זה גם מה שנראה זהה. */
+  --font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Arial', sans-serif;
+
+  /* ── משכי אנימציה (AppTokens) ──────────────────────────────────────────── */
+  --anim-fast: 150ms;
+  --anim-normal: 250ms;
+  --anim-slow: 400ms;
+
+  /* ── פריסה (layout_tokens.dart) ────────────────────────────────────────── */
+  /* רוחב מקסימלי לתוכן בתוך מסך — מונע כרטיסים רחבים מדי בדסקטופ. */
+  --panel-content-max: 860px;
+
+  /* גובה שורת הכותרת המותאמת. */
+  --title-bar-height: 40px;
+  /* רוחב אזור התפיסה לשינוי גודל בשולי החלון. שש נקודות זה מה שווינדוס
+   * עצמה נותנת, וזה מה שהיד מצפה לו. */
+  --resize-edge: 6px;
+}
+
+/* ── ערכה כהה (seed #9C27B0) ───────────────────────────────────────────────
+ * ה-host מציב `data-theme` על ה-root לפי ערכת המערכת ומעדכן אותו כשהיא
+ * משתנה בזמן ריצה. אין בורר ערכה בתוכנה — היא הולכת אחרי ווינדוס, כמו
+ * בגרסת ה-Flutter. */
+:root[data-theme='dark'] {
+  --primary: #ebb5ed;
+  --on-primary: #49204e;
+  --primary-container: #613766;
+  --on-primary-container: #ffd6fe;
+  --secondary: #d7bfd5;
+  --on-secondary: #3b2b3c;
+  --secondary-container: #534153;
+  --on-secondary-container: #f4dbf1;
+  --tertiary: #f6b8ad;
+  --on-tertiary: #4c251f;
+  --tertiary-container: #673b34;
+  --on-tertiary-container: #ffdad4;
+  --error: #ffb4ab;
+  --on-error: #690005;
+  --error-container: #93000a;
+  --on-error-container: #ffdad6;
+  --surface: #171216;
+  --on-surface: #ebdfe6;
+  --on-surface-variant: #d0c3cc;
+  --surface-dim: #171216;
+  --surface-bright: #3e373d;
+  --surface-container-lowest: #110d11;
+  --surface-container-low: #1f1a1f;
+  --surface-container: #231e23;
+  --surface-container-high: #2e282d;
+  --surface-container-highest: #393338;
+  --outline: #998d96;
+  --outline-variant: #4d444c;
+  --inverse-surface: #ebdfe6;
+  --on-inverse-surface: #352f34;
+  --inverse-primary: #7b4e7f;
+  --shadow: #000000;
+  --scrim: #000000;
+
+  /* במצב כהה רקע הלוח הוא שחור מלא — כך זה היה ב-`AppSurfaces`. */
+  --panel-bg: #000000;
+
+  --card-bg: var(--surface-container);
+  /* אין צל במצב כהה — ראו למעלה. */
+  --card-shadow: none;
+}

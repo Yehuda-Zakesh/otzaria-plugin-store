@@ -1,0 +1,1613 @@
+/* מסכי החנות ורכיביה.
+ *
+ * פורט של `lib/src/widgets/` ו-`lib/src/screens/plugins/`. כל הצבעים
+ * והמידות מגיעים מ-`tokens.css` — אין כאן ערך שנבחר מחדש.
+ *
+ * ── טיפוגרפיה של Material 3 ─────────────────────────────────────────────────
+ * הערכה במקור דרסה `bodyMedium` ל-18px, וזה גודל הטקסט הרגיל בתוכנה.
+ * שאר הסקאלה כאן היא זו של M3:
+ *
+ *   headlineMedium  28px / 400   כותרת דף התוסף
+ *   titleMedium     16px / 500   שם התוסף, כותרות סעיפים (מודגש אצלנו)
+ *   bodyMedium      18px / 400   מלל רגיל (הדריסה שבערכה)
+ *   bodySmall       12px / 400   תיאורים, תאריכים
+ *   labelLarge      14px / 500   כפתורים
+ *
+ * ── הרדיוס ──────────────────────────────────────────────────────────────────
+ * M3 נותן לכפתורים צורת "stadium" (מעוגלים לגמרי), אבל הערכה של אוצריא
+ * דורסת את `shape` ל-8px **בכל** הפקדים — ראו `AppThemeData`. זה חלק
+ * מהזהות הוויזואלית, ולכן `--radius` חל גם על כפתורים.
+ */
+
+/* ── אייקונים ───────────────────────────────────────────────────────────────── */
+
+.icon {
+  flex: 0 0 auto;
+  fill: currentColor;
+  /* הגליפים מיושרים לתיבת ה-em; המרכוז האנכי מול טקסט נעשה ב-flex. */
+  display: block;
+}
+
+/* ── מד טעינה ───────────────────────────────────────────────────────────────── */
+
+.spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── כרטיס ──────────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  /* הפינות חותכות את התמונה שבראש הכרטיס. */
+  overflow: hidden;
+}
+
+.card--tappable {
+  cursor: pointer;
+  transition: background var(--anim-normal);
+}
+
+.card--tappable:hover {
+  background: color-mix(in srgb, var(--primary) 5%, var(--card-bg));
+}
+
+.card--tappable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ── כפתורים ────────────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 40px;
+  padding: 0 var(--space-md);
+  border: 0;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: var(--font-md);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--anim-fast), box-shadow var(--anim-fast);
+}
+
+.btn:disabled {
+  cursor: default;
+  /* M3: 38% על השטח, 12% על הרקע הממולא. */
+  opacity: 0.5;
+}
+
+.btn.grow {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* FilledButton — הפעולה המומלצת. */
+.btn--recommended {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.btn--recommended:not(:disabled):hover {
+  background: color-mix(in srgb, var(--on-primary) 8%, var(--primary));
+}
+
+.btn--recommended:not(:disabled):active {
+  background: color-mix(in srgb, var(--on-primary) 12%, var(--primary));
+}
+
+/* FilledButton.tonal — פעולה ניטרלית. */
+.btn--neutral {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.btn--neutral:not(:disabled):hover {
+  background: color-mix(in srgb, var(--on-primary) 8%,
+                        var(--secondary-container));
+}
+
+.btn--neutral:not(:disabled):active {
+  background: color-mix(in srgb, var(--on-primary) 12%,
+                        var(--secondary-container));
+}
+
+/* TextButton — שקוף. */
+.btn--ghost {
+  background: transparent;
+  color: var(--primary);
+  padding: 0 var(--space-sm);
+}
+
+.btn--ghost:not(:disabled):hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.btn--ghost:not(:disabled):active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* כפתור אייקון בלבד. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition: background var(--anim-fast);
+}
+
+.icon-btn:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+
+.icon-btn:active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+/* ── שבב חיווי מצב ──────────────────────────────────────────────────────────── */
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  font-size: var(--font-md);
+  font-weight: 600;
+  /* הרקע נגזר מצבע החיווי עצמו, בשקיפות אחידה — `AppSurfaces.statusChip`. */
+  background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+  color: var(--chip-color);
+  min-width: 0;
+}
+
+.status-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-chip--ok { --chip-color: var(--primary); }
+.status-chip--updateAvailable { --chip-color: var(--tertiary); }
+.status-chip--working { --chip-color: var(--secondary); }
+.status-chip--needsAction { --chip-color: var(--tertiary); }
+.status-chip--error { --chip-color: var(--error); }
+.status-chip--unknown { --chip-color: var(--on-surface-variant); }
+
+/* ── גלולות ─────────────────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  min-width: 0;
+}
+
+.badge--emphasized {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.badge__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 0;
+  transition: background var(--anim-fast);
+}
+
+.pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill--static {
+  cursor: default;
+}
+
+.pill:not(.pill--static):hover {
+  background: color-mix(in srgb, var(--primary) 12%,
+                        var(--surface-container-highest));
+}
+
+.pill--active {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.pill--active:not(.pill--static):hover {
+  background: color-mix(in srgb, var(--on-primary) 10%, var(--primary));
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* שורת תגיות אחת בכרטיס — התגיות המלאות בדף התוסף. */
+.pill-row--clamped {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: var(--space-xs);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+/* ── כוכבי דירוג ────────────────────────────────────────────────────────────── */
+/* שכבת כוכבים מעומעמת, ומעליה שכבה כתומה שנחתכת ל-value/5 מהרוחב —
+ * הפורט של `StarRating` שבאתר.
+ *
+ * `inset-inline-start` ולא `left`: בעברית ה-start הוא הצד הימני, ולכן
+ * אותו כוכב מתמלא ראשון כמו באתר. */
+
+.stars {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.stars__base,
+.stars__fill {
+  display: flex;
+  gap: 0;
+}
+
+.stars__base {
+  color: color-mix(in srgb, var(--on-surface-variant) 30%, transparent);
+}
+
+.stars__fill {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: var(--stars-fill, 0%);
+  overflow: hidden;
+  color: var(--rating-star);
+}
+
+/* ── תמונה ──────────────────────────────────────────────────────────────────── */
+
+.thumb {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-container);
+}
+
+.thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb__placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+/* ── פריסת המסך ─────────────────────────────────────────────────────────────── */
+
+/* המבנה תחת `#shell`: שורת כותרת, באנרים, ואחריהם הגוף שתופס את השאר.
+ * `min-height: 0` בכל שלב הוא מה שמאפשר לאזור הגלילה שבתוך הגוף לגלול
+ * במקום למתוח את הדף. */
+
+.banners {
+  flex: 0 0 auto;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.store {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.store__columns {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.store__scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* מרווח בתחתית, כמו ה-sliver הריק שבסוף במקור. */
+  padding-bottom: calc(var(--space-xl) + var(--space-md));
+}
+
+/* המרווח האופקי מקצה המסך — זהה לשני צדי התוכן.
+ *
+ * ⚠️ **רוחב מלא**, בשונה מ-`ScreenBody` של שאר המסכים שמגביל ל-860px:
+ * החנות היא רשת כרטיסים עם תמונות, והגבלת רוחב הייתה מצמצמת אותה לשתי
+ * עמודות גם על מסך רחב. */
+.store__pad {
+  padding: var(--space-md) var(--space-lg) 0;
+}
+
+.store__pad--section {
+  padding-top: var(--space-xl);
+}
+
+.store__pad--center {
+  display: flex;
+  justify-content: center;
+}
+
+/* ── שורת הסנכרון ───────────────────────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--shell-divider);
+}
+
+.toolbar__main,
+.toolbar__side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.toolbar__main {
+  flex: 1 1 auto;
+}
+
+.toolbar__stamp {
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── מתג ────────────────────────────────────────────────────────────────────── */
+/* פורט של `CustomSwitch` — מסלול וגלגלת, בלי תלות ב-appearance של
+ * הדפדפן. */
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch__track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--surface-container-highest);
+  border: 2px solid var(--outline);
+  transition: background var(--anim-fast), border-color var(--anim-fast);
+  flex: 0 0 auto;
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--outline);
+  transform: translateY(-50%);
+  transition: inset-inline-start var(--anim-fast), background var(--anim-fast),
+      width var(--anim-fast), height var(--anim-fast);
+}
+
+.switch input:checked + .switch__track {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  inset-inline-start: 22px;
+  width: 16px;
+  height: 16px;
+  background: var(--on-primary);
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.switch__label {
+  font-size: var(--font-md);
+  color: var(--on-surface);
+  white-space: nowrap;
+}
+
+/* ── סרגל הצד ───────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  flex: 0 0 232px;
+  width: 232px;
+  overflow-y: auto;
+  padding: var(--space-md);
+  /* הסרגל יושב בצד ה-start, ולכן הקו המפריד בקצה ה-end שלו. */
+  border-inline-end: 1px solid var(--outline-variant);
+}
+
+.sidebar__title {
+  padding: 0 var(--space-sm) var(--space-sm);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  color: var(--on-surface-variant);
+}
+
+.sidebar__divider {
+  border: 0;
+  border-top: 1px solid var(--outline-variant);
+  margin: var(--space-md) 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 9px var(--space-sm);
+  margin-bottom: 2px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: var(--font-md);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--anim-fast);
+}
+
+.nav-item:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.nav-item--active {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-weight: 700;
+}
+
+.nav-item--muted {
+  color: var(--on-surface-variant);
+}
+
+.nav-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-item__count {
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+  flex: 0 0 auto;
+}
+
+/* שורת הקטגוריות למסך צר. */
+.category-bar {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--outline-variant);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.category-bar .pill {
+  flex: 0 0 auto;
+}
+
+/* ── כותרות סעיף ────────────────────────────────────────────────────────────── */
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: var(--space-xs);
+}
+
+.eyebrow__line {
+  width: 28px;
+  height: 1px;
+  background: color-mix(in srgb, var(--primary) 40%, transparent);
+  flex: 0 0 auto;
+}
+
+.section-header {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.section-header__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.section-header__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.section-header__desc {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.field-label {
+  margin-bottom: 6px;
+  font-size: var(--font-sm);
+  font-weight: 700;
+  color: var(--on-surface-variant);
+}
+
+/* ── דף הבית ────────────────────────────────────────────────────────────────── */
+
+.hero {
+  padding: var(--space-xl) var(--space-lg);
+  text-align: center;
+}
+
+.hero__title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--on-surface);
+}
+
+.hero__subtitle {
+  margin: var(--space-sm) auto 0;
+  max-width: 640px;
+  font-size: var(--font-body);
+  color: var(--on-surface-variant);
+}
+
+.hero__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: 640px;
+  margin: var(--space-lg) auto 0;
+  padding: 6px 6px 6px var(--space-md);
+  background: var(--surface-container-highest);
+  border-radius: var(--radius);
+  color: var(--on-surface-variant);
+}
+
+.hero__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--font-lg);
+  color: var(--on-surface);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.discovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+.discovery__prompt {
+  font-size: var(--font-body);
+  color: var(--on-surface-variant);
+}
+
+/* ── שורת הסינון ────────────────────────────────────────────────────────────── */
+
+.filters {
+  padding: var(--space-lg);
+}
+
+.filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-md);
+}
+
+.filters__field {
+  min-width: 0;
+}
+
+.filters__field--grow {
+  flex: 1 1 320px;
+}
+
+.filters__field--status {
+  flex: 0 0 180px;
+}
+
+.filters__tags {
+  margin-top: var(--space-md);
+}
+
+.text-field__wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  color: var(--on-surface-variant);
+  transition: border-color var(--anim-fast);
+}
+
+.text-field__wrap:focus-within {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.text-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 10px 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--font-md);
+  color: var(--on-surface);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  font-family: inherit;
+  font-size: var(--font-md);
+  color: var(--on-surface);
+  cursor: pointer;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* ── רשת הכרטיסים ───────────────────────────────────────────────────────────── */
+/* 280px מינימום — משם נגזר מספר העמודות, כמו `_minCardWidth` במקור.
+ *
+ * `auto-fill` + `minmax` הוא מה שמייתר את כל תקציבי הגובה הקבועים שהיו
+ * ב-`SliverGrid` (ראו ההערה בראש screens.js): השורה מקבלת את גובה
+ * הכרטיס הגבוה בה, ואין מה לחתוך. */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+  align-items: stretch;
+}
+
+.plugin-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md);
+  gap: var(--space-sm);
+}
+
+.card__media {
+  position: relative;
+}
+
+.card__featured {
+  position: absolute;
+  top: var(--space-sm);
+  /* ה-badge יושב בפינה הפנימית — ימין בעברית. */
+  inset-inline-end: var(--space-sm);
+}
+
+.plugin-card__name {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--on-surface);
+  /* שתי שורות לכל היותר, כמו `maxLines: 2`. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plugin-card__desc {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* דוחק את שורת הכפתורים לתחתית — המקבילה של `Spacer()`. */
+.plugin-card__spacer {
+  flex: 1 1 auto;
+}
+
+.plugin-card__actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.plugin-card__rule {
+  border: 0;
+  border-top: 1px solid var(--outline-variant);
+  margin: 0;
+}
+
+.plugin-card__footer {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.plugin-card__link {
+  font-size: var(--font-sm);
+  font-weight: 700;
+  color: var(--primary);
+  flex: 0 0 auto;
+}
+
+.plugin-card__date {
+  flex: 1 1 auto;
+  text-align: end;
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── מצבים ריקים ושורות מצב ─────────────────────────────────────────────────── */
+
+.empty-state {
+  padding: var(--space-xl) var(--space-lg);
+  text-align: center;
+}
+
+.empty-state__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.empty-state__body {
+  margin: var(--space-sm) auto var(--space-md);
+  max-width: 520px;
+  font-size: var(--font-body);
+  color: var(--on-surface-variant);
+}
+
+.error-row,
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+}
+
+.error-row {
+  color: var(--error);
+}
+
+.error-row__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-md);
+  overflow-wrap: anywhere;
+}
+
+.progress-row {
+  color: var(--on-surface-variant);
+  font-size: var(--font-md);
+}
+
+/* ── דף פרטי התוסף ──────────────────────────────────────────────────────────── */
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.detail-header__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-lg);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.detail__two-col {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-lg);
+}
+
+/* מעל 900px "מידע כללי" ו"תגיות" יושבים זה לצד זה. */
+@media (min-width: 900px) {
+  .detail__two-col {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.panel {
+  padding: var(--space-lg);
+}
+
+.panel__title {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.detail-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+/* מעל ה-breakpoint הבינוני (840px) התמונה והפרטים זה לצד זה. */
+@media (min-width: 840px) {
+  .detail-hero {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-xl);
+  }
+
+  .detail-hero__media {
+    flex: 0 0 340px;
+    width: 340px;
+  }
+}
+
+.detail-hero__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.detail-hero__name {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--on-surface);
+}
+
+.detail-hero__desc {
+  margin: 0;
+  font-size: var(--font-body);
+  color: var(--on-surface);
+  white-space: pre-wrap;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.detail-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+/* ── תאי מידע ───────────────────────────────────────────────────────────────── */
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-sm);
+}
+
+@media (min-width: 420px) {
+  .info-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .info-cell--wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.info-cell {
+  padding: calc(var(--space-sm) + 2px) var(--space-md);
+  background: var(--panel-section);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.info-cell__label {
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.info-cell__value {
+  margin-top: 2px;
+  font-size: var(--font-md);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── דירוג ──────────────────────────────────────────────────────────────────── */
+
+.rating {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* מעל 520px הממוצע והפילוח זה לצד זה, כמו `md:` שבאתר. */
+@media (min-width: 520px) {
+  .rating {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-lg);
+  }
+
+  .rating__average {
+    flex: 0 0 220px;
+    width: 220px;
+  }
+
+  .rating__breakdown {
+    flex: 1 1 auto;
+  }
+}
+
+.rating__average {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  background: var(--panel-section);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.rating__value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.rating__count {
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.rating__breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.rating__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* רוחב מזערי לתווית ולמונה, כדי שכל המדים יתחילו ויסתיימו באותו מקום. */
+.rating__score,
+.rating__row-count {
+  flex: 0 0 30px;
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.rating__score {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--on-surface-variant);
+}
+
+.rating__score .icon {
+  fill: var(--rating-star);
+}
+
+.rating__meter {
+  flex: 1 1 auto;
+  height: 10px;
+  border-radius: var(--radius);
+  background: var(--surface-container-highest);
+  overflow: hidden;
+}
+
+.rating__meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--rating-star);
+}
+
+/* ── צילומי מסך ─────────────────────────────────────────────────────────────── */
+
+.shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.shots__item {
+  flex: 0 0 200px;
+  width: 200px;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-container);
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+}
+
+.shots__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── מחסום, דיאלוג ושכבת סנכרון ─────────────────────────────────────────────── */
+
+.barrier {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  /* `AppColors.dialogBarrier` = 0x22000000. */
+  background: var(--dialog-barrier);
+  padding: var(--space-lg);
+}
+
+/* שכבת הסנכרון כהה יותר — היא חוסמת פעולה, לא רק שואלת. */
+.barrier--sync {
+  background: rgba(0, 0, 0, 0.54);
+}
+
+.dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - var(--space-xl) * 2);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-lg);
+  background: var(--dialog-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
+.dialog__title {
+  margin: 0 0 var(--space-md);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.dialog__text {
+  margin: 0;
+  font-size: var(--font-lg);
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+.sync {
+  width: min(420px, 100%);
+  padding: var(--space-lg);
+  background: var(--surface);
+  border-radius: var(--radius);
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
+.sync__title {
+  margin: 0;
+  font-size: var(--font-lg);
+  font-weight: 700;
+}
+
+.sync__subtitle,
+.sync__message {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.sync__message {
+  margin-top: var(--space-md);
+}
+
+.sync__percent {
+  margin-top: var(--space-xs);
+  font-size: var(--font-sm);
+  font-weight: 700;
+}
+
+.sync__cancel {
+  margin-top: var(--space-md);
+}
+
+.sync__warnings {
+  max-height: 140px;
+  overflow-y: auto;
+  margin-top: var(--space-md);
+  text-align: start;
+}
+
+.sync__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-sm);
+  color: var(--tertiary);
+}
+
+.progress {
+  margin-top: var(--space-md);
+  height: 8px;
+  border-radius: var(--radius);
+  background: var(--surface-container-highest);
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: var(--radius);
+  transition: width var(--anim-normal);
+}
+
+/* מד לא-קבוע — כשעוד לא ידוע היעד. */
+.progress__bar--indeterminate {
+  width: 40%;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% { margin-inline-start: -40%; }
+  100% { margin-inline-start: 100%; }
+}
+
+/* ── דיאלוג העדכונים ────────────────────────────────────────────────────────── */
+
+.updates__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: var(--space-md);
+}
+
+.updates__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--panel-section);
+  border-radius: var(--radius);
+}
+
+.updates__info {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.updates__name {
+  font-size: var(--font-md);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.updates__versions {
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.updates__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.updates__manual {
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+.updates__footer {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--space-md);
+}
+
+.updates__note {
+  margin: var(--space-md) 0 0;
+  font-size: var(--font-sm);
+  color: var(--on-surface-variant);
+}
+
+/* ── גלריית צילומי המסך ─────────────────────────────────────────────────────── */
+
+.barrier--lightbox {
+  background: rgba(0, 0, 0, 0.87);
+  padding: 0;
+}
+
+.lightbox {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.lightbox__stage {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--space-xl);
+}
+
+.lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.lightbox__missing {
+  color: #ffffff;
+}
+
+.lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  cursor: pointer;
+}
+
+/* "הקודם" בעברית הוא בצד הימני. */
+.lightbox__nav--prev { inset-inline-end: var(--space-md); }
+.lightbox__nav--next { inset-inline-start: var(--space-md); }
+
+.lightbox__counter {
+  position: absolute;
+  bottom: var(--space-lg);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: var(--font-md);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: var(--space-md);
+  inset-inline-start: var(--space-md);
+}
+
+.lightbox__close .icon-btn {
+  color: #ffffff;
+}
+
+.lightbox__close .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+/* ── הודעות רגעיות ──────────────────────────────────────────────────────────── */
+
+.snacks {
+  position: fixed;
+  bottom: var(--space-lg);
+  inset-inline-start: 50%;
+  transform: translateX(50%);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: center;
+  pointer-events: none;
+}
+
+.snack {
+  pointer-events: auto;
+  max-width: min(560px, calc(100vw - var(--space-xl)));
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  background: var(--inverse-surface);
+  color: var(--on-inverse-surface);
+  font-size: var(--font-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  animation: snack-in var(--anim-normal) ease-out;
+}
+
+.snack--success {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.snack--error {
+  background: var(--error-container);
+  color: var(--on-error-container);
+}
+
+.snack--leaving {
+  animation: snack-out var(--anim-fast) ease-in forwards;
+}
+
+@keyframes snack-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes snack-out {
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+/* ── באנר גרסה חדשה ─────────────────────────────────────────────────────────── */
+/* שורה ולא דיאלוג: הודעת עדכון שחוסמת את המסך היא בדיוק מה שמפריע למי
+ * שפתח את התוכנה כדי להתקין תוסף. */
+
+.update-banner,
+.readonly-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 0 0 auto;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--shell-divider);
+}
+
+.update-banner {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.readonly-banner {
+  background: var(--tertiary-container);
+  color: var(--on-tertiary-container);
+}
+
+.update-banner__text,
+.readonly-banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-md);
+  font-weight: 700;
+}
+
+.readonly-banner__text {
+  font-weight: 400;
+}
+
+/* ── מסך אימות התשתית ומסך שגיאת הגדרה ──────────────────────────────────────── */
+
+.diagnostics {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-lg);
+}
+
+.diagnostics dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-sm) var(--space-md);
+  margin: 0;
+  max-width: var(--panel-content-max);
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  font-size: var(--font-md);
+}
+
+.diagnostics dt {
+  color: var(--on-surface-variant);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.diagnostics dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.setup-error {
+  max-width: var(--panel-content-max);
+  margin-inline: auto;
+  padding: var(--space-xl) var(--space-lg);
+  overflow-y: auto;
+}
+
+.setup-error h1 {
+  margin: 0 0 var(--space-md);
+  font-size: 24px;
+  color: var(--error);
+}
+
+.setup-error p {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-body);
+  color: var(--on-surface);
+  line-height: 1.5;
+}
+
+.setup-error__dir {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--error-container);
+  color: var(--on-error-container);
+  border-radius: var(--radius);
+  font-family: var(--font-family);
+  font-size: var(--font-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── פסי גלילה ──────────────────────────────────────────────────────────────── */
+/* פס הגלילה של הדפדפן בולט מדי לאפליקציה; זה הגוון של ווינדוס עצמה. */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--on-surface) 28%, transparent)
+      transparent;
+}

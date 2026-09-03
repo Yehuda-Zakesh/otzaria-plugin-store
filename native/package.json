@@ -1,0 +1,9 @@
+{
+  "name": "otzaria-plugin-store-web",
+  "private": true,
+  "type": "module",
+  "description": "הממשק והלוגיקה של חנות התוספים. אין תלויות npm בכוונה: הקוד רץ בתוך WebView2 בלי bundler, והבדיקות רצות על `node --test` המובנה.",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

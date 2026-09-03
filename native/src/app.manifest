@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="otzaria.plugin.store" version="1.0.0.0" />
+  <!-- Common Controls 6: נדרש לדיאלוג הקבצים המודרני (IFileSaveDialog). -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"
+                        version="6.0.0.0" publicKeyToken="6595b64144ccf1df"
+                        language="*" processorArchitecture="*" />
+    </dependentAssembly>
+  </dependency>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <!-- PerMonitorV2: בלעדיו התוכנה מטושטשת על מסך בהגדלה, וזה המצב
+           הרגיל בלפטופ. גם החלון חסר-המסגרת תלוי בזה — חישובי הגודל כאן
+           הם בפיקסלים אמיתיים. -->
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <!-- UTF-8 כקוד-העמוד של התהליך: כל הנתיבים כאן הם wide, אבל
+           ספריות שנטענות לתהליך (כולל ה-WebView2) מקבלות בכך התנהגות
+           עקבית עם שמות שאינם ASCII. -->
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10/11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+</assembly>

@@ -1,4 +1,4 @@
-# בונה את `windows/runner/resources/app_icon.ico` מתמונת מקור אחת.
+﻿# בונה את `windows/runner/resources/app_icon.ico` מתמונת מקור אחת.
 #
 #   tool\make_app_icon.ps1 -Source C:\path\to\icon.png
 #
@@ -23,7 +23,7 @@ Add-Type -AssemblyName System.Drawing
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Out) {
-  $Out = Join-Path $projectRoot 'windows\runner\resources\app_icon.ico'
+  $Out = Join-Path $projectRoot 'native\res\app_icon.ico'
 }
 
 if (-not (Test-Path -LiteralPath $Source)) {
@@ -111,14 +111,17 @@ try {
 $kb = [math]::Round((Get-Item -LiteralPath $Out).Length / 1KB, 1)
 Write-Host "Wrote $Out ($kb KB, sizes: $($sizes -join ', '))"
 
-# ── הנכס שבתוך התוכנה ────────────────────────────────────────────────────────
-# `AppTitleBar` מציג את אותו אייקון לצד שם התוכנה. הוא נכתב **מכאן** ולא
+# ── הנכס שבתוך הממשק ─────────────────────────────────────────────────────────
+# שורת הכותרת מציגה את אותו אייקון לצד שם התוכנה. הוא נכתב **מכאן** ולא
 # מועתק ביד, כדי שאייקון קובץ ההרצה והאייקון שבחלון לא ייפרדו: קודם ישב שם
 # הלוגו של אוצריא, וזה נראה כמו תוכנה אחרת מזו שלחצו עליה בשורת המשימות.
-$assetPng = Join-Path $projectRoot 'assets\images\app_icon.png'
-$png256 = ($pngs | Where-Object { $_.Size -eq 256 } | Select-Object -First 1)
-if (-not $png256) { throw 'No 256px rendition was produced.' }
-[System.IO.File]::WriteAllBytes($assetPng, $png256.Bytes)
-Write-Host "Wrote $assetPng ($([math]::Round($png256.Bytes.Length / 1KB, 1)) KB, 256px)"
+#
+# 48px ולא 256: הוא מוצג ב-24px, ו-48 מספיק גם למסך בהגדלה 200%. הרינדור
+# של 256 שקל ‎85KB — פי עשרים מהנחוץ, בתוך exe שכולו חצי MB.
+$webPng = Join-Path $projectRoot 'native\web\img\app_icon.png'
+$png48 = ($pngs | Where-Object { $_.Size -eq 48 } | Select-Object -First 1)
+if (-not $png48) { throw 'No 48px rendition was produced.' }
+[System.IO.File]::WriteAllBytes($webPng, $png48.Bytes)
+Write-Host "Wrote $webPng ($([math]::Round($png48.Bytes.Length / 1KB, 1)) KB, 48px)"
 
-Write-Host 'Rebuild to pick it up:  flutter build windows --release ; .\windows_stub\package.ps1'
+Write-Host 'Rebuild to pick it up:  .\native\build.ps1'

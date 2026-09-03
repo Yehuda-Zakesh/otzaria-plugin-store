@@ -1,0 +1,206 @@
+/* מסגרת החלון: שורת הכותרת המותאמת ואזורי שינוי הגודל.
+ *
+ * פורט של `lib/src/widgets/app_title_bar.dart` (ומשם מאוצריא). הרקע זהה
+ * לרקע המסך — הקו התחתון הוא כל מה שמפריד ביניהם.
+ *
+ * ── למה הגרירה ושינוי הגודל כאן ולא בווינדוס ──────────────────────────────
+ * ה-host מחזיר את כל החלון כאזור-לקוח כדי שלא תישאר שולית מסגרת גלויה
+ * סביב התוכן, ולכן אין אזור לא-לקוח שווינדוס תתפוס בו. שני אלה נמסרים
+ * לה מכאן ב-`mousedown`, והיא מבצעת אותם — כולל snap וגרירה בין מסכים.
+ * ראו ההסבר בראש native/src/main.cpp.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--panel-bg);
+  color: var(--on-surface);
+  font-family: var(--font-family);
+  font-size: var(--font-body);
+  /* התוכנה בעברית, ולכן RTL הוא הבסיס. `dir="rtl"` על ה-html קובע גם את
+   * `start`/`end` של הפריסה, בדיוק כמו ש-`Directionality` עשה. */
+  -webkit-user-select: none;
+  user-select: none;
+  /* בחירת טקסט בעכבר אינה התנהגות של אפליקציה; היא מוחזרת נקודתית
+   * במקומות שבהם יש טקסט להעתיק (תיאור התוסף, נתיבים). */
+  cursor: default;
+}
+
+/* המבנה: שורת כותרת, באנר אופציונלי, ואחריהם המסך שתופס את השאר. */
+#shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ── שורת הכותרת ──────────────────────────────────────────────────────────── */
+
+.title-bar {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  height: var(--title-bar-height);
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--shell-divider);
+}
+
+/* כל מה שאינו כפתור גורר את החלון. */
+.title-bar__drag {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.title-bar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding-inline: var(--space-md);
+  flex: 0 0 auto;
+}
+
+.title-bar__icon {
+  width: 24px;
+  height: 24px;
+  /* התמונה היא 48px ומוצגת ב-24 — כך היא חדה גם במסך בהגדלה 200%. */
+  display: block;
+}
+
+.title-bar__app {
+  /* `titleMedium` של Material 3 עם bold, כמו במקור. */
+  font-size: var(--font-lg);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* שם המסך הפתוח, באמצע השורה. */
+.title-bar__screen {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding-inline: var(--space-sm);
+}
+
+.title-bar__screen span {
+  color: var(--on-surface-variant);
+  font-size: var(--font-lg);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── כפתורי החלון ─────────────────────────────────────────────────────────── */
+/* שלושה, 46px לכל אחד — מידות ווינדוס 11, כמו `WindowCaption`. */
+
+.caption-buttons {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.caption-button {
+  width: 46px;
+  height: var(--title-bar-height);
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--on-surface);
+  cursor: default;
+  transition: background var(--anim-fast);
+}
+
+/* גוני ה-hover של ווינדוס עצמה: אפור עדין, ואדום על הסגירה. */
+.caption-button:hover {
+  background: color-mix(in srgb, var(--on-surface) 9%, transparent);
+}
+
+.caption-button:active {
+  background: color-mix(in srgb, var(--on-surface) 14%, transparent);
+}
+
+.caption-button--close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
+.caption-button--close:active {
+  background: #c83c30;
+  color: #ffffff;
+}
+
+/* הסמלים מצוירים כ-SVG ולא כגופן: Segoe MDL2 אינו קיים בכל ווינדוס,
+ * וסמל חסר הופך לריבוע. */
+.caption-button svg {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+/* ── שולי שינוי הגודל ─────────────────────────────────────────────────────── */
+/* שמונה אזורים שקופים בשולי החלון. הם מעל התוכן (z-index) אבל דקים,
+ * ולכן אינם מפריעים ללחיצות. במצב מוגדל הם מוסתרים — אין מה לשנות. */
+
+.resize-edges {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+body[data-maximized='true'] .resize-edges {
+  display: none;
+}
+
+.resize-edge {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.resize-edge[data-edge='top'],
+.resize-edge[data-edge='bottom'] {
+  left: var(--resize-edge);
+  right: var(--resize-edge);
+  height: var(--resize-edge);
+  cursor: ns-resize;
+}
+
+.resize-edge[data-edge='top'] { top: 0; }
+.resize-edge[data-edge='bottom'] { bottom: 0; }
+
+.resize-edge[data-edge='left'],
+.resize-edge[data-edge='right'] {
+  top: var(--resize-edge);
+  bottom: var(--resize-edge);
+  width: var(--resize-edge);
+  cursor: ew-resize;
+}
+
+.resize-edge[data-edge='left'] { left: 0; }
+.resize-edge[data-edge='right'] { right: 0; }
+
+.resize-edge[data-edge='topleft'],
+.resize-edge[data-edge='topright'],
+.resize-edge[data-edge='bottomleft'],
+.resize-edge[data-edge='bottomright'] {
+  width: var(--resize-edge);
+  height: var(--resize-edge);
+}
+
+.resize-edge[data-edge='topleft'] { top: 0; left: 0; cursor: nwse-resize; }
+.resize-edge[data-edge='topright'] { top: 0; right: 0; cursor: nesw-resize; }
+.resize-edge[data-edge='bottomleft'] { bottom: 0; left: 0; cursor: nesw-resize; }
+.resize-edge[data-edge='bottomright'] { bottom: 0; right: 0; cursor: nwse-resize; }

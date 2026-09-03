@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <!-- CSP: הממשק כולו מוגש מתוך ה-exe, ולכן אין שום סיבה שהוא יטען
+       משהו מהרשת. `img-src` מתיר גם את התחילית שדרכה ה-host מגיש
+       תמונות מתוך `Data\`. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 script-src 'self';
+                 style-src 'self';
+                 img-src 'self' data:;
+                 font-src 'self';
+                 connect-src 'none';">
+  <title>חנות התוספים של אוצריא</title>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/shell.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="shell"></div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

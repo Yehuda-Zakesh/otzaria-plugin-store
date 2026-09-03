@@ -1,0 +1,52 @@
+// משאבי ה-exe: האייקון, חבילת הממשק, משאב הגרסה וה-manifest.
+//
+// ⚠️ הקובץ הזה נקרא ע"י rc.exe. `version.h` מיוצר ע"י build.ps1 לתוך
+// `native/build/`, והוא **אנגלית ו-ASCII בלבד** — קידוד של קובץ שמוכלל
+// ב-.rc הוא בדיוק סוג התקלה שאין טעם להיכנס אליה בקובץ מיוצר.
+#include <windows.h>
+
+#include "resource.h"
+#include "version.h"
+
+// האייקון קודם לכל השאר — ראו resource.h.
+IDI_APP_ICON ICON "app_icon.ico"
+
+// חבילת קובצי הממשק (HTML/CSS/JS), דחוסה. זה מה שהופך את ה-exe לתוכנה
+// שלמה: אין שום קובץ ממשק לידו.
+IDR_WEB_BUNDLE RCDATA "web_bundle.bin"
+
+// ה-manifest: DPI-aware לכל מסך, ו-Common Controls 6. בלי ה-DPI התוכנה
+// מטושטשת על מסך בהגדלה, וזה המצב הרגיל בלפטופ.
+1 RT_MANIFEST "app.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION APP_VERSION_COMMAS
+ PRODUCTVERSION APP_VERSION_COMMAS
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEFLAGS 0x0L
+ FILEOS VOS__WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 040d = עברית, 04b0 = Unicode. שורת השפה הזאת היא מה שמאפשר
+        // ל-Explorer להציג את השדות בעברית בלי להשתמש בקוד-עמוד.
+        BLOCK "040d04b0"
+        BEGIN
+            VALUE "CompanyName", "\05d0\05d5\05e6\05e8\05d9\05d0"
+            VALUE "FileDescription", "\05d7\05e0\05d5\05ea \05d4\05ea\05d5\05e1\05e4\05d9\05dd \05e9\05dc \05d0\05d5\05e6\05e8\05d9\05d0"
+            VALUE "FileVersion", APP_VERSION_A
+            VALUE "InternalName", "otzaria-plugin-store"
+            VALUE "LegalCopyright", "GPL-3.0"
+            // חייב להתאים לשם שאיתו ה-exe מופץ — ראו build.ps1.
+            VALUE "OriginalFilename", "\05d7\05e0\05d5\05ea \05d4\05ea\05d5\05e1\05e4\05d9\05dd.exe"
+            VALUE "ProductName", "\05d7\05e0\05d5\05ea \05d4\05ea\05d5\05e1\05e4\05d9\05dd \05e9\05dc \05d0\05d5\05e6\05e8\05d9\05d0"
+            VALUE "ProductVersion", APP_VERSION_A
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x40d, 1200
+    END
+END

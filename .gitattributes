@@ -6,11 +6,34 @@
 *.sh text eol=lf
 *.yml text eol=lf
 
-# סקריפטי האריזה נשמרים UTF-8 **עם BOM** כדי ש-PowerShell 5.1 תקרא את
-# העברית שבהם נכון. BOM אינו נפגע מנרמול שורות, אבל הסימון כאן מונע כל
-# טיפול אחר.
+# ⚠️ נקרא ע"י bash ב-CI (`tr -d` בג'וב הגרסה, ו-`grep -qx` ב-
+# `set_version.sh`). CRLF כאן היה מכניס \r להשוואה.
+native/VERSION text eol=lf
+
+# סקריפטי ה-PowerShell נשמרים UTF-8 **עם BOM** כדי ש-PowerShell 5.1 תקרא
+# את העברית שבהם נכון. זה לא תיאורטי: בלי ה-BOM היא קראה את הקבצים
+# בקוד-עמוד המערכת, והמקף העברי בהערה הפך לשגיאת פרסור שהפילה את הבנייה.
+# BOM אינו נפגע מנרמול שורות, אבל הסימון כאן מונע כל טיפול אחר.
 *.ps1 text eol=crlf
+
+# קוד המקור של ה-host ושל הממשק — UTF-8, שורות LF.
+*.cpp text eol=lf
+*.h text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+
+# ⚠️ `.rc` נקרא ע"י `rc.exe` בלבד, והוא ASCII טהור (העברית שבו מקודדת
+# כ-`\05d0`) — ראו native/src/app.rc.
+*.rc text eol=crlf
+*.manifest text eol=crlf
 
 # בינאריים.
 *.ico binary
 *.png binary
+*.ttf binary
+*.woff2 binary
+# ה-fixture של קורא ה-ZIP — ראו .gitignore.
+*.otzplugin binary
