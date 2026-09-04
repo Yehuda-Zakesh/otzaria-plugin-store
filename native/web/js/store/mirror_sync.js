@@ -132,6 +132,12 @@ export class PluginMirrorSync {
 
     const catalog = new PluginCatalog({
       lastSync: new Date(),
+      // מה שהמראה נבנתה עבורו, כדי שהמחשב הלא-מקוון יוכל להסביר תוסף
+      // שאינו מוצג אצלו. **בביטול נשמר הקודם**: הקבצים שעל הכונן הם
+      // עדיין אלה של היעד הקודם, ולא של זה שהסנכרון לא הספיק למלא.
+      targetAppVersions: wasCancelled
+          ? previousCatalog.targetAppVersions
+          : appVersions,
       plugins: plugins.map((plugin) =>
           plugin.copyWith({categorySlugs: structure.slugsOf(plugin.id)})),
       categories: structure.categories,
@@ -139,7 +145,7 @@ export class PluginMirrorSync {
     });
     await this.store.save(catalog);
 
-    // בילד שכבר אינו בקטלוג (גרסת אוצריא שבכונן זזה) נמחק מהדיסק — אחרת
+    // בילד שכבר אינו בקטלוג (גרסת היעד של אוצריא זזה) נמחק מהדיסק — אחרת
     // כל עדכון של אוצריא היה מוסיף שכבת בילדים ישנים על הכונן הנייד.
     // **לא בביטול**: שם הקטלוג הוא הישן, והניקוי היה מוחק את מה שכן ירד.
     if (!wasCancelled) {
@@ -189,7 +195,7 @@ export class PluginMirrorSync {
       manifestId: previous?.manifestId ?? null,
     });
 
-    // בילד לכל גרסת אוצריא שהכונן נושא. בילד שכבר במראה נשמר, וזה שאינו
+    // בילד לכל גרסת יעד של אוצריא. בילד שכבר במראה נשמר, וזה שאינו
     // מבוקש עוד נושר מהקטלוג — הקובץ שלו נמחק בסוף הסנכרון.
     const keep = new Map();
     const missing = [];
@@ -388,7 +394,7 @@ export class PluginMirrorSync {
   }
 
   /**
-   * מוריד את הבילדים שהתכנון סימן — אחד לכל גרסת אוצריא שהכונן נושא
+   * מוריד את הבילדים שהתכנון סימן — אחד לכל גרסת יעד של אוצריא
    * ושהבילד שלה עוד לא במראה. `ok: false` = לפחות אחד מהם נכשל.
    */
   async #syncPluginFiles(plan, plugin, report) {

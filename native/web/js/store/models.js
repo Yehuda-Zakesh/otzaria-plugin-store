@@ -189,7 +189,7 @@ function versionsFrom(value, baseUrl) {
  * מיזוג של המטא-דאטה מ-`/api/plugins` עם הנתיבים היחסיים של הקבצים
  * שירדו למראה.
  *
- * **הקבצים הם מפה, לא קובץ אחד** (`localFiles`): הכונן נושא עד שתי
+ * **הקבצים הם מפה, לא קובץ אחד** (`localFiles`): המראה נבנית עבור עד שתי
  * גרסאות של אוצריא, ולכל אחת עשוי להתאים בילד אחר של אותו תוסף.
  */
 export class StorePlugin {
@@ -317,13 +317,42 @@ export class StorePlugin {
   }
 
   /**
-   * הבילד שיותקן במחשב שמריץ [appVersion]: הגבוה ביותר שתואם לו
-   * **ושהקובץ שלו יושב במראה**. כשאף בילד תואם לא ירד מוחזר הגבוה
-   * שתואם, כדי שהממשק יאמר "הקובץ לא ירד" ולא "אין תוסף".
+   * הבילדים שהמראה **אמורה** לנשוא — אחד לכל גרסה ב-[targetAppVersions],
+   * ממוינים יורד. בלי תלות בשאלה אם הקובץ שלהם כבר ירד.
+   *
+   * רשימה ריקה של גרסאות יעד = מראה שנכתבה לפני שהיעד נשמר בקטלוג, או
+   * בירור שנכשל. אז **כל** הבילדים הם מועמדים, כמו לפני השינוי: מראה
+   * ותיקה נושאת בילד שנבחר לפי גרסת המחשב המסנכרן, ופסילתו הייתה מסתירה
+   * תוסף שקובץ עובד שלו יושב על הכונן.
    */
-  installTarget(appVersion) {
+  mirrorTargets(targetAppVersions = []) {
+    return targetAppVersions.length > 0
+        ? resolveTargets(this.versionEntries, targetAppVersions)
+        : this.versionEntries;
+  }
+
+  /**
+   * האם המראה נושאת בילד שירוץ על [appVersion] — התנאי להצגת התוסף
+   * בחנות. `false` = התוסף אינו מוצג כלל: אין מה להציע למחשב הזה, וכל
+   * מה שהצגתו הייתה מייצרת הוא כפתור התקנה שדורש אינטרנט במחשב שאין בו.
+   */
+  runsOn(appVersion, targetAppVersions = []) {
+    return this.mirrorTargets(targetAppVersions)
+        .some((entry) => isCompatibleWithApp(entry, appVersion));
+  }
+
+  /**
+   * הבילד שיותקן במחשב שמריץ [appVersion]: הגבוה **מבין אלה שהמראה
+   * נושאת** שתואם לו ושהקובץ שלו יושב במראה. כשאף אחד מהם לא ירד מוחזר
+   * הגבוה שתואם, כדי שהממשק יאמר "הקובץ לא ירד" ולא "אין תוסף".
+   *
+   * ⚠️ **רק מתוך בילדי המראה**, ולא מכל ההיסטוריה: בילד היסטורי שתואם
+   * למחשב הזה אך אינו יעד של המראה לא יירד לעולם, והחזרתו הייתה מייצרת
+   * "טרם ירד — יש לבצע סנכרון" שאין דרך לפתור.
+   */
+  installTarget(appVersion, targetAppVersions = []) {
     let compatible = null;
-    for (const entry of this.versionEntries) {
+    for (const entry of this.mirrorTargets(targetAppVersions)) {
       if (!isCompatibleWithApp(entry, appVersion)) continue;
       if (compatible === null) compatible = entry;
       if (this.localFiles.has(entry.version)) return entry;
@@ -331,7 +360,7 @@ export class StorePlugin {
     return compatible;
   }
 
-  /** הבילדים שצריכים לרדת עבור הגרסאות שהכונן נושא. */
+  /** הבילדים שצריכים לרדת עבור גרסאות היעד של המראה. */
   targetsFor(appVersions) {
     return resolveTargets(this.versionEntries, appVersions);
   }
@@ -350,8 +379,8 @@ export class StorePlugin {
    *
    * @param {Map<string,string>|Object} installed
    */
-  statusAgainst(installed, appVersion) {
-    const target = this.installTarget(appVersion);
+  statusAgainst(installed, appVersion, targetAppVersions = []) {
+    const target = this.installTarget(appVersion, targetAppVersions);
     if (target === null) return InstallStatus.incompatible;
 
     const key = this.manifestId;
@@ -651,10 +680,22 @@ export class PluginStoreHome {
 
 export class PluginCatalog {
   constructor({lastSync = null, plugins = [], categories = [],
-               home = PluginStoreHome.empty} = {}) {
+               home = PluginStoreHome.empty, targetAppVersions = []} = {}) {
     /** מועד הסנכרון האחרון, או null אם מעולם לא סונכרן. */
     this.lastSync = lastSync;
     this.plugins = plugins;
+    /**
+     * גרסאות אוצריא שהסנכרון בנה את המראה עבורן, מהגבוהה לנמוכה — מה
+     * שהריפו פרסם באותו רגע, ולא הגרסה שבמחשב המסנכרן.
+     *
+     * **נשמר בקטלוג** כי המחשב שצורך את המראה אינו מקוון ואינו יכול
+     * לברר אותן בעצמו: בלעדיהן אין דרך לדעת אם תוסף חסר כי הוא אינו
+     * תואם למחשב הזה, ואין מה לומר למשתמש.
+     *
+     * ריק במראה שסונכרנה לפני שהשדה נוסף — ואז אין הסתרה, ראו
+     * `StorePlugin.mirrorTargets`.
+     */
+    this.targetAppVersions = targetAppVersions;
     /**
      * קטגוריות החנות, בסדר שנקבע באתר. ריק במראה שסונכרנה לפני שהאתר
      * הכניס קטגוריות, וזה מצב תקין — הממשק פשוט לא מציג שורת קטגוריות.
@@ -675,6 +716,7 @@ export class PluginCatalog {
   toJSON() {
     return {
       lastSync: this.lastSync === null ? null : this.lastSync.toISOString(),
+      targetAppVersions: this.targetAppVersions,
       home: this.home.toJSON(),
       categories: this.categories.map((c) => c.toJSON()),
       plugins: this.plugins.map((p) => p.toJSON()),
@@ -716,6 +758,11 @@ export class PluginCatalog {
       lastSync,
       plugins,
       categories,
+      // מסונן: ערך שאינו מספר גרסה היה מסתיר תוספים בלי סיבה.
+      targetAppVersions: Array.isArray(json.targetAppVersions)
+          ? json.targetAppVersions.filter(
+              (v) => typeof v === 'string' && v.length > 0)
+          : [],
       home: PluginStoreHome.fromJson(json.home),
     });
   }

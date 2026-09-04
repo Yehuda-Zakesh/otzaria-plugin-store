@@ -1,0 +1,197 @@
+name: Bundle
+
+# אורז את **החבילה המלאה**: ה-exe שכבר פורסם, ואחריו מראה שלמה של כל
+# התוספים משורשרת לסופו. מי שמוריד אותה מריץ פעם אחת, והכול נפרס
+# לתיקייה שלידה — בלי אינטרנט, אף פעם.
+#
+# ⚠️ ה-workflow הזה **אינו מקדם גרסה ואינו מתייג `v<N>`**. הגרסה היא
+# מספר שלם אחד שמתקדם רק בדחיפה ל-main (ci.yml), ו-release בשם כזה כאן
+# היה מודיע לכל המשתמשים על גרסה חדשה כשהקוד זהה — ראו
+# `store_release_client.js`, שבוחר את ה-`v<N>` היציב הגבוה כ"יש עדכון".
+#
+# לכן התג הוא `bundle` **מתגלגל**: תמיד אותו אחד, מתעדכן במקום. גם
+# משום ש-`fetchLatestStable` קורא דף אחד של 30 releases — פרסום חדש בכל
+# ריצה היה דוחף אחרי כמה חודשים את כל ה-`v<N>` מחוץ לדף, והתראת העדכון
+# הייתה מפסיקה לעבוד בשקט.
+
+on:
+  # יומי ולא שבועי: הזיהוי זול (הזריעה + מטא-דאטה), והאריזה קורית רק
+  # כשמשהו באמת זז. עדכון תוסף לא ימתין שבוע.
+  schedule:
+    - cron: "0 3 * * *"
+  # release חדש של החנות עצמה — ה-exe שבתוך החבילה התיישן. אירוע, לא סקר.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# אריזה אחת בכל רגע: שתי ריצות במקביל היו נלחמות על אותו תג.
+concurrency:
+  group: bundle
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    name: pack the full bundle
+    # ⚠️ **windows דווקא**: `mirror_store.js` בונה נתיבים מוחלטים עם `\`,
+    # ועל לינוקס זה מייצר קבצים ששם הקובץ שלהם מכיל backslash.
+    runs-on: windows-latest
+    # דחייה של ריצת CI שנכשלה — אין טעם לארוז exe שלא פורסם.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUNDLE_TAG: bundle
+      BUNDLE_ASSET: Otzaria-Plugin-Store-Full.exe
+      SLIM_ASSET: Otzaria-Plugin-Store.exe
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # ── ה-exe שייכנס לחבילה ────────────────────────────────────────────
+      # נמשך מה-release ולא נבנה כאן: מה שמופץ בחבילה חייב להיות בדיוק
+      # הבינארי שנבדק ופורסם, ולא בנייה שנייה של אותו קומיט.
+      - name: Fetch the published exe
+        shell: bash
+        run: |
+          set -euo pipefail
+          # הגבוה מבין `v<N>`, כמו `storeVersionOf` בתוכנה — סדר הפרסום
+          # אינו סדר הגרסאות, ו"הראשון ברשימה" היה תלוי-מזל.
+          tag="$(gh release list --limit 100 --json tagName \
+            --jq '[.[].tagName | select(test("^v[0-9]+$"))]
+                  | sort_by(.[1:] | tonumber) | last')"
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::אין אף release בצורה v<N> — אין exe לארוז"
+            exit 1
+          fi
+          echo "ה-exe נלקח מ-$tag"
+          echo "STORE_TAG=$tag" >> "$GITHUB_ENV"
+          gh release download "$tag" -p "$SLIM_ASSET" -D slim
+
+      # ── זריעה מהחבילה הקודמת ───────────────────────────────────────────
+      # בלעדיה כל ריצה הייתה מושכת ‎96MB מ-otzaria.org. איתה `#plan`
+      # מוריד רק את הדלתא — ובדרך אגב זה מריץ ב-CI בדיוק את המסלול
+      # האינקרמנטלי שכונן של משתמש עובר בעדכון.
+      - name: Seed from the previous bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release download "$BUNDLE_TAG" -p "$BUNDLE_ASSET" -D previous
+          then
+            node native/tools/unpack_overlay.mjs "previous/$BUNDLE_ASSET" Data
+            cp Data/catalog.json catalog.before.json
+            node native/tools/mirror_changed.mjs --inventory Data/plugins \
+              > inventory.before.txt
+            # ה-exe שבתוך החבילה הקודמת — להשוואה מול זה שהורד עכשיו.
+            node native/tools/unpack_overlay.mjs --slim \
+              "previous/$BUNDLE_ASSET" previous-slim.exe
+          else
+            echo "אין חבילה קודמת — הפרסום הראשון בונה מראה מאפס"
+          fi
+
+      # ── הסנכרון ────────────────────────────────────────────────────────
+      # מריץ את `PluginMirrorSync` **עצמו**. כללי הבחירה — איזה בילד לאיזו
+      # גרסת אוצריא, מה נחשב "לא השתנה" — נשארים במקום אחד, ואין כאן
+      # מימוש שני שלהם שייפרד מהקוד ביום שאחד מהם ישתנה.
+      - name: Build the mirror
+        shell: bash
+        run: node native/tools/pack_mirror.mjs Data
+
+      - name: Is there anything to publish?
+        id: changed
+        shell: bash
+        run: |
+          # ⚠️ שני תנאים, ולא רק המראה: כשמתפרסם exe חדש המראה אינה
+          # משתנה, והשוואת המראה לבדה הייתה משאירה את החבילה עם בינארי
+          # ישן לנצח — כלומר הטריגר `workflow_run` לא היה עושה כלום.
+          if [ ! -f previous-slim.exe ] ||
+             ! cmp -s "slim/$SLIM_ASSET" previous-slim.exe; then
+            echo "ה-exe של החנות השתנה — מפרסמים"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          set +e
+          node native/tools/mirror_changed.mjs \
+            catalog.before.json Data/catalog.json \
+            inventory.before.txt Data/plugins
+          case $? in
+            0) echo "publish=true"  >> "$GITHUB_OUTPUT" ;;
+            1) echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit 1 ;;
+          esac
+
+      # ── האריזה ─────────────────────────────────────────────────────────
+      - name: Pack the bundle
+        if: steps.changed.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node native/tools/pack_overlay.mjs \
+            "slim/$SLIM_ASSET" Data "$BUNDLE_ASSET"
+
+      # המשתמש של החבילה **מנותק**: חבילה פגומה אינה ניתנת לתיקון אצלו,
+      # והוא גם לא ידע מה נשבר. הפריסה חוזרת כאן ומושווית לפני שמפרסמים.
+      - name: Verify the bundle round-trips
+        if: steps.changed.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node native/tools/unpack_overlay.mjs "$BUNDLE_ASSET" verify
+          # `diff -r` ולא השוואת שמות: שם כמו `image.webp` חוזר 35 פעם
+          # בתיקיות שונות, והשוואה לפי שם וגודל בלבד לא הייתה מבחינה
+          # ביניהם. כאן נבדק **התוכן**, קובץ מול קובץ.
+          diff -r Data verify
+          size=$(node -e "
+            console.log((require('fs').statSync(process.argv[1]).size /
+                         1048576).toFixed(1));
+          " "$BUNDLE_ASSET")
+          echo "$BUNDLE_ASSET — ${size}MB"
+
+      # ── הפרסום ─────────────────────────────────────────────────────────
+      - name: Publish to the rolling release
+        if: steps.changed.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          plugins="$(node -e "
+            const c = require('./Data/catalog.json');
+            const withFile = c.plugins.filter(
+              (p) => Object.keys(p.localFiles ?? {}).length > 0).length;
+            console.log(withFile + '|' + c.targetAppVersions.join(', '));
+          ")"
+          count="${plugins%%|*}"
+          targets="${plugins##*|}"
+          # ⚠️ בלי הזחה: הטקסט נמסר כמו שהוא, ושורה מוזחת ב-markdown של
+          # GitHub נעשית בלוק קוד.
+          notes="$(printf '%s\n' \
+            "חבילה מלאה: $count תוספים ארוזים בתוך קובץ ההרצה." \
+            "" \
+            "נבנתה עבור אוצריא $targets, על גבי $STORE_TAG." \
+            "עודכנה: $(date -u '+%Y-%m-%d')" \
+            "" \
+            "הרצה אחת פורסת את הכול לתיקייה \`Data\` שלצד קובץ ההרצה, ומשם התוכנה עובדת בלי אינטרנט.")"
+
+          # ⚠️ `--clobber` ותג קבוע: החבילה **מתגלגלת**. release חדש בכל
+          # ריצה היה צובר עשרות פריטים ודוחף את ה-`v<N>` מחוץ לדף שבדיקת
+          # העדכון קוראת.
+          if gh release view "$BUNDLE_TAG" >/dev/null 2>&1; then
+            gh release edit "$BUNDLE_TAG" --notes "$notes"
+            gh release upload "$BUNDLE_TAG" "$BUNDLE_ASSET" --clobber
+          else
+            gh release create "$BUNDLE_TAG" "$BUNDLE_ASSET" \
+              --title "חבילה מלאה" --notes "$notes"
+          fi
+
+      - name: Nothing changed
+        if: steps.changed.outputs.publish != 'true'
+        shell: bash
+        run: echo "המראה זהה לזו שכבר פורסמה — לא פורסמה חבילה חדשה"

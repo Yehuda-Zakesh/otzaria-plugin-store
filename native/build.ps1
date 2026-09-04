@@ -95,8 +95,8 @@ if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars." }
 
 # ── 5. קומפילציה ולינק ───────────────────────────────────────────────────────
 $sources = @(
-  'main.cpp', 'bridge.cpp', 'common.cpp', 'fsapi.cpp',
-  'netapi.cpp', 'paths.cpp', 'sysapi.cpp', 'webres.cpp'
+  'main.cpp', 'bridge.cpp', 'common.cpp', 'fsapi.cpp', 'netapi.cpp',
+  'overlay.cpp', 'paths.cpp', 'sysapi.cpp', 'webres.cpp'
 ) | ForEach-Object { '"' + (Join-Path $srcDir $_) + '"' }
 
 # /MT — CRT סטטי, וזו החלטה מרכזית: בלעדיו ה-exe דורש
@@ -118,10 +118,13 @@ if ($Debug) {
   $linkExtra = '/OPT:REF /OPT:ICF'
 }
 
+# comctl32 — ה-progress bar של חלון פריסת החבילה (overlay.cpp). הוא
+# משאיר את ה-exe בגודלו: ה-DLL כבר טעון בכל תהליך שיש לו חלון.
 $libs = @(
   'version.lib', 'shlwapi.lib', 'dwmapi.lib', 'winhttp.lib', 'cabinet.lib',
   'crypt32.lib', 'ole32.lib', 'oleaut32.lib', 'shell32.lib', 'user32.lib',
-  'gdi32.lib', 'advapi32.lib', 'kernel32.lib', 'comdlg32.lib', 'uuid.lib'
+  'gdi32.lib', 'advapi32.lib', 'kernel32.lib', 'comdlg32.lib', 'uuid.lib',
+  'comctl32.lib'
 ) -join ' '
 
 $exePath = Join-Path $outDir $appFileName

@@ -41,10 +41,13 @@ export function resolveCompatibleVersion(entries, appVersion) {
 
 /**
  * הבילדים שצריכים לרדת למראה עבור [appVersions] — אחד לכל גרסת אוצריא
- * שהכונן נושא, בלי כפילות כששתיהן נפתרות לאותו בילד.
+ * שהמראה נבנית עבורה, בלי כפילות כששתיהן נפתרות לאותו בילד.
  *
- * רשימת גרסאות ריקה = אין מול מה לסנן (מראת תוכנה ריקה), ואז יורד הבילד
- * החי בלבד: בדיוק ההתנהגות שהייתה לפני שהתאימות נכנסה.
+ * רשימת גרסאות ריקה = אין מול מה לסנן (בירור הגרסאות נכשל), ואז יורד
+ * הבילד החי בלבד: בדיוק ההתנהגות שהייתה לפני שהתאימות נכנסה.
+ *
+ * **מוחזר ממוין יורד** ולא בסדר [appVersions]: הצרכנים בוחרים מתוך
+ * התוצאה את "הגבוה שמתאים למחשב הזה", והסדר הוא מה שהופך את זה לחד-משמעי.
  */
 export function resolveTargets(entries, appVersions) {
   if (entries.length === 0) return [];
@@ -55,7 +58,8 @@ export function resolveTargets(entries, appVersions) {
     const entry = resolveCompatibleVersion(entries, appVersion);
     if (entry !== null) targets.set(entry.version, entry);
   }
-  return [...targets.values()];
+  return [...targets.values()]
+      .sort((a, b) => comparePluginVersions(b.version, a.version));
 }
 
 /**

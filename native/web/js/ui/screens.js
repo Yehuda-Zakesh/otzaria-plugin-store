@@ -115,13 +115,21 @@ export function renderStore(host, controller, {readOnly = false} = {}) {
                      h('span', {text: S.plugins.loadingCatalog})],
         })));
   } else if (controller.plugins.length === 0) {
-    scroll.append(h('div.store__pad', neverSyncedState(controller, readOnly)));
+    // מראה מלאה שאף תוסף בה אינו רץ כאן אינה "מעולם לא סונכרן" — הסנכרון
+    // דווקא הצליח, וההסבר היחיד שעוזר הוא שאוצריא כאן אינה מתאימה.
+    scroll.append(h('div.store__pad', controller.hiddenCount > 0
+        ? hiddenOnlyState(controller)
+        : neverSyncedState(controller, readOnly)));
   } else {
     switch (controller.view) {
       case Page.home: scroll.append(...homeSections(controller)); break;
       case Page.all: scroll.append(...allSections(controller)); break;
       case Page.category: scroll.append(...categorySections(controller)); break;
     }
+    // בתחתית **כל** המסכים: התוסף החסר עשוי להיות מאוצר בדף הבית או
+    // משובץ בקטגוריה, ולא רק ברשימה המלאה.
+    const hidden = hiddenNote(controller);
+    if (hidden !== null) scroll.append(hidden);
   }
 
   replace(host, layout);
@@ -543,7 +551,42 @@ function categorySections(controller) {
   return sections;
 }
 
+// ── תוספים שהוסתרו בגלל תאימות ───────────────────────────────────────────────
+
+/**
+ * שורת ההסבר בתחתית הרשימה, או `null` כשלא הוסתר כלום.
+ *
+ * **שורה אחת ולא התראה**: זה מצב תקין של מראה שנבנתה עבור גרסה אחרת, לא
+ * תקלה — אבל בלי שום אזכור, "התוסף קיים באתר ואצלי הוא נעלם" אינו ניתן
+ * לאבחון מרחוק, וזו בדיוק השאלה שמגיעה מהמשתמשים.
+ */
+function hiddenNote(controller) {
+  if (controller.hiddenCount === 0) return null;
+  return h('div.store__pad',
+      appCard({
+        className: 'hidden-note',
+        children: [
+          icon('info', 20),
+          h('span.hidden-note__text', {
+            text: S.plugins.hiddenByCompatibility(
+                controller.hiddenCount, controller.appVersion,
+                controller.targetAppVersions),
+          }),
+        ],
+      }));
+}
+
 // ── מצבים ריקים ──────────────────────────────────────────────────────────────
+
+/** מראה שאין בה אף תוסף שירוץ על אוצריא שכאן. */
+function hiddenOnlyState(controller) {
+  const t = S.plugins;
+  return emptyState({
+    title: t.hiddenOnlyTitle,
+    body: t.hiddenOnlyBody(controller.hiddenCount, controller.appVersion,
+                           controller.targetAppVersions),
+  });
+}
 
 function neverSyncedState(controller, readOnly) {
   const t = S.plugins;

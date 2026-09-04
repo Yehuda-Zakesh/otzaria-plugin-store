@@ -19,6 +19,8 @@ import {PluginsManager} from './store/plugins_manager.js';
 import {OtzariaInstallProbe} from './store/otzaria_probe.js';
 import {StoreReleaseClient, isStoreVersionNewer}
     from './store/store_release_client.js';
+import {OtzariaReleaseClient} from './store/otzaria_release_client.js';
+import {formatBytes} from './util/bytes.js';
 import {h, icon, replace} from './ui/dom.js';
 import {installIconSprite} from './ui/icons.js';
 import {actionButton, iconButton} from './ui/components.js';
@@ -120,7 +122,11 @@ async function main() {
     },
   });
 
-  const controller = new StoreController({manager, probe, log});
+  // מברר מהן גרסאות אוצריא שהמראה נבנית עבורן. נקרא **רק** כשהמשתמש
+  // מסנכרן או בודק עדכונים, ולכן העלייה עצמה נשארת בלי רשת.
+  const releaseClient = new OtzariaReleaseClient({net});
+
+  const controller = new StoreController({manager, probe, releaseClient, log});
 
   // רינדור מלא בכל שינוי מצב. המסך הוא כמה עשרות אלמנטים, והבקר הוא
   // מקור האמת היחיד — ראו ההערה בראש `ui/screens.js`.
@@ -165,6 +171,9 @@ async function main() {
 
   // ── בדיקת גרסה חדשה של החנות ────────────────────────────────────────────
   void checkForNewVersion(banners, info.version, log);
+
+  // ── קובץ ההתקנה של החבילה, אם נשאר כזה ──────────────────────────────────
+  void offerInstallerCleanup(banners, info.installerPath, log);
 
   // רינדור מחדש בשינוי גודל: מספר העמודות וסרגל הצד תלויים ברוחב.
   let resizeTimer = null;
@@ -234,6 +243,58 @@ async function checkForNewVersion(banners, currentVersion, log) {
         tooltip: t.bannerDismissTooltip,
         // נשמר בזיכרון בלבד: אין הגדרות בתוכנה הזאת, וההודעה תחזור
         // בהרצה הבאה — וזה בסדר, כי הגרסה עדיין חדשה.
+        onPressed: () => banner.remove(),
+      }));
+  banners.append(banner);
+}
+
+/**
+ * מציע למחוק את קובץ ההתקנה של החבילה המלאה, אחרי שהיא כבר פרסה את
+ * עצמה והעבירה את השרביט ל-exe הרזה שרץ עכשיו.
+ *
+ * ⚠️ **מציע ולא מוחק.** הפיתוי הוא למחוק לבד — הקובץ הוא ~‎96MB שכל
+ * תוכנו כבר יושב בתיקייה שלידו, וזה בדיוק מה שהמשתמש ביקש להימנע ממנו.
+ * אבל אותה חבילה עשויה להיות מיועדת גם למחשב שני, ומחיקה שקטה של הורדה
+ * בגודל כזה הייתה מאלצת להוריד אותה מחדש — במחשב שאין בו אינטרנט.
+ *
+ * ה-host הוא שמכריע אם יש בכלל מה למחוק: `installerPath` ריק כשהקובץ
+ * נעלם, כשהוא אינו קובץ, וכשהוא קובץ ההרצה שרץ עכשיו — ראו
+ * `InstallerPath()` ב-bridge.cpp.
+ */
+async function offerInstallerCleanup(banners, installerPath, log) {
+  if (!installerPath) return;
+
+  let size = '';
+  try {
+    size = formatBytes((await fs.stat(installerPath)).size);
+  } catch (error) {
+    // הקובץ נעלם בין הבדיקה של ה-host לכאן — אין מה להציע.
+    log(`קובץ ההתקנה אינו נגיש: ${error?.message ?? error}`);
+    return;
+  }
+
+  const t = S.bundleInstaller;
+  const banner = h('div.update-banner',
+      icon('checkmark-circle', 20),
+      h('div.update-banner__text', {text: t.bannerTitle(size)}),
+      actionButton({
+        text: t.bannerButton,
+        variant: 'neutral',
+        onPressed: async () => {
+          try {
+            await fs.remove(installerPath);
+          } catch (error) {
+            showError(t.deleteFailed(error?.message ?? error));
+            return;
+          }
+          log(`קובץ ההתקנה נמחק: ${installerPath}`);
+          banner.remove();
+          showSnack(t.deleted, 'success');
+        },
+      }),
+      iconButton({
+        iconName: 'dismiss',
+        tooltip: t.bannerDismissTooltip,
         onPressed: () => banner.remove(),
       }));
   banners.append(banner);
