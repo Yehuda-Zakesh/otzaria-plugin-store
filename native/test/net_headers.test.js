@@ -140,5 +140,19 @@ describe('absoluteUrl', () => {
   // מוחלטת, ולכן הבסיס ריק ואין להשלים כלום.
   it('בסיס ריק אינו משנה את הכתובת', () => {
     assert.equal(absoluteUrl('/api/x', ''), '/api/x');
+    assert.equal(absoluteUrl('uploads/x.png', ''), 'uploads/x.png');
+  });
+
+  // ⚠️ השרשור היה נאיבי, ושתי הצורות האלה יצאו ממנו שבורות.
+  it('כתובת יחסית בלי לוכסן מוביל מקבלת אותו', () => {
+    // `https://otzaria.orguploads/x.png` הוא שם מארח אחר לגמרי.
+    assert.equal(absoluteUrl('uploads/x.png', 'https://otzaria.org'),
+                 'https://otzaria.org/uploads/x.png');
+  });
+
+  it('כתובת חסרת סכימה מקבלת https ולא את הבסיס', () => {
+    // `https://otzaria.org//cdn.example/x.png` הוא נתיב באתר, לא ה-CDN.
+    assert.equal(absoluteUrl('//cdn.example/x.png', 'https://otzaria.org'),
+                 'https://cdn.example/x.png');
   });
 });

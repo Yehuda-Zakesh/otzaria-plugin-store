@@ -25,6 +25,18 @@ describe('formatBytes — גבולות', () => {
     assert.equal(formatBytes(1024 * 1024 * 1024), u.gigabytes('1.00'));
   });
 
+  // ⚠️ הגבול נבדק על הערך הגולמי בעוד התצוגה מעוגלת, ולכן הפס שמתחת לכל
+  // כפולה הציג את היחידה **הקודמת** במספר שלא קיים בה: "1024 ק״ב".
+  it('ערך שמתעגל ל-1024 עולה ליחידה הבאה ולא מוצג כ-"1024"', () => {
+    assert.equal(formatBytes(1048575), u.megabytes('1.0'));
+    assert.equal(formatBytes(1048064), u.megabytes('1.0'),
+                 'הבית הראשון שמתעגל כלפי מעלה');
+    assert.equal(formatBytes(1048063), u.kilobytes('1023'),
+                 'ומיד מתחתיו עדיין ק״ב');
+    assert.equal(formatBytes(1073741823), u.gigabytes('1.00'));
+    assert.equal(formatBytes(1073217536), u.gigabytes('1.00'));
+  });
+
   it('ספרה אחרי הנקודה רק מתחת ל-10MB', () => {
     assert.equal(formatBytes(1024 * 1024 * 5 + 512 * 1024), u.megabytes('5.5'));
     assert.equal(formatBytes(1024 * 1024 * 73), u.megabytes('73'));

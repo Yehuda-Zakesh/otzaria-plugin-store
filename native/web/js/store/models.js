@@ -713,6 +713,19 @@ export class PluginCatalog {
     return null;
   }
 
+  /**
+   * מחזיר עותק עם שדות מוחלפים. שדה שלא נמסר נשאר כמו שהוא.
+   *
+   * ⚠️ **זו הדרך היחידה לכתוב מחדש קטלוג קיים.** מי שבנה `new
+   * PluginCatalog({...})` והעתיק שדה-שדה איבד בשקט כל שדה ששכח: כך
+   * `targetAppVersions` נמחק מהמראה בכל התקנה שהשלימה קובץ חסר, ומחשב
+   * לא-מקוון התחיל להציג תוספים שאין לו בילד עבורם. ההעתקה כאן מלאה
+   * מעצם הגדרתה, וגם שדה שיתווסף בעתיד ייסע איתה בלי לגעת בקוראים.
+   */
+  copyWith(changes) {
+    return new PluginCatalog({...this, ...changes});
+  }
+
   toJSON() {
     return {
       lastSync: this.lastSync === null ? null : this.lastSync.toISOString(),

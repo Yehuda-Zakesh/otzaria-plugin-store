@@ -23,7 +23,7 @@ const TOOL = join(here, '..', 'tools', 'mirror_changed.mjs');
 
 /** קודי היציאה, בשמות — כדי שהבדיקות יקראו כמו החוזה. */
 const PUBLISH = 0;
-const NOTHING_TO_PUBLISH = 1;
+const NOTHING_TO_PUBLISH = 3;
 const MISUSE = 2;
 
 let root;

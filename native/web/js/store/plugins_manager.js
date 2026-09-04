@@ -7,7 +7,7 @@
 
 import {S} from '../strings.js';
 import {InstalledPluginsScanner} from './installed_scanner.js';
-import {PluginLocalFile, PluginCatalog} from './models.js';
+import {PluginLocalFile} from './models.js';
 import {PluginMirrorSync} from './mirror_sync.js';
 import {PluginMirrorStore} from './mirror_store.js';
 import {PluginOnlinePeek} from './online_peek.js';
@@ -89,10 +89,21 @@ export class PluginsManager {
     }).peek({appVersions});
   }
 
-  /** נתיב מוחלט לנכס שנשמר בקטלוג כנתיב יחסי, או null אם אין נכס. */
+  /**
+   * נתיב מוחלט לנכס שנשמר בקטלוג כנתיב יחסי, או null אם אין נכס.
+   *
+   * נתיב שיוצא מהמראה (`resolveAgainst` זורק עליו) מוחזר כ-null: זו
+   * תמונה, ומסך שלם לא ייפול בגלל רשומה פגומה אחת. המסלולים שכן קוראים
+   * את הקובץ — `install` ו-`saveCopy` — עוברים דרך `hasAsset`, שמחזיר
+   * `false` על אותו נתיב ולכן אינו נוגע בו כלל.
+   */
   assetPath(relativePath) {
     if (!relativePath) return null;
-    return this.store.absolutePath(relativePath);
+    try {
+      return this.store.absolutePath(relativePath);
+    } catch {
+      return null;
+    }
   }
 
   /** שם הקובץ המוצע לשמירה, לפי מה שהאתר החזיר ב-Content-Disposition. */
@@ -199,14 +210,13 @@ export class PluginsManager {
           await readPluginManifestId(asset.path, this.io);
       const updated = plugin.copyWith({localFiles, manifestId});
 
-      // ⚠️ הקטגוריות וטקסטי דף הבית **חייבים** לנסוע איתם: בלעדיהם
-      // השמירה הזאת מוחקת את כל מבנה החנות מהמראה בגלל הורדה של קובץ
-      // בודד.
+      // ⚠️ **רק `plugins` משתנה כאן, וכל השאר חייב לנסוע איתו.** הורדה של
+      // קובץ בודד אינה עילה לגעת במבנה החנות או בגרסאות היעד של המראה,
+      // ובנייה מחדש שהעתיקה שדה-שדה מחקה בשקט את מה ששכחה: כך
+      // `targetAppVersions` נעלם מהקטלוג, והמחשב הלא-מקוון התחיל להציג
+      // תוספים שאין לו בילד עבורם. `copyWith` הוא מה שמונע את זה.
       const catalog = await this.store.load();
-      await this.store.save(new PluginCatalog({
-        lastSync: catalog.lastSync,
-        home: catalog.home,
-        categories: catalog.categories,
+      await this.store.save(catalog.copyWith({
         plugins: catalog.plugins.map(
             (p) => p.id === updated.id ? updated : p),
       }));

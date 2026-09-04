@@ -14,6 +14,7 @@
 // מ-otzaria.org ולא 35. זו גם הסיבה שהמסלול שנבדק ב-CI הוא המסלול
 // האינקרמנטלי שכונן של משתמש עובר בעדכון, ולא "מראה ריקה" שאיש אינו חי בו.
 
+import {readdir, rmdir} from 'node:fs/promises';
 import {win32} from 'node:path';
 
 import {fs, net} from './node_host.mjs';
@@ -88,6 +89,54 @@ for (const warning of warnings) console.log(`אזהרה: ${warning}`);
 if (result.hasFailures) {
   console.error(`כשלו: ${result.failed.join(' | ')}`);
   process.exit(1);
+}
+
+// ── ניקוי תיקיות ריקות ───────────────────────────────────────────────────────
+// ⚠️ **חובה לפני האריזה.** לפורמט החבילה אין רשומת תיקייה — הוא רושם
+// קבצים בלבד (`pack_overlay.mjs`), והמחלץ יוצר רק את תיקיות ההורה של
+// קבצים. תיקייה ריקה ב-`Data\` לכן אינה שורדת את ההלוך-חזור, ואימות
+// `diff -r Data verify` שב-bundle.yml נופל על `Only in Data: …` —
+// כלומר **הג'וב היומי כולו נכשל ושום חבילה אינה מתפרסמת**.
+//
+// זה לא תיאורטי: הסנכרון יוצר את תיקיית התוסף לפני שהוא מוריד לתוכה
+// משהו, וגריעת בילדים ישנים מוחקת קבצים בלי למחוק את התיקייה שהתרוקנה.
+// הניקוי כאן הוא ברמת התוצאה ולכן חסין לכל סיבה שבגללה נוצרה תיקייה
+// ריקה, גם כזאת שעוד לא נתקלנו בה.
+async function pruneEmptyDirs(root) {
+  const removed = [];
+  // מחזיר true אם נשאר תוכן כלשהו תחת [dir] אחרי הניקוי.
+  async function walk(dir) {
+    let entries;
+    try {
+      entries = await readdir(dir, {withFileTypes: true});
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return true;
+      throw error;
+    }
+    let survivors = 0;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        survivors++;
+        continue;
+      }
+      const child = win32.join(dir, entry.name);
+      if (await walk(child)) {
+        survivors++;
+        continue;
+      }
+      await rmdir(child);
+      removed.push(child);
+    }
+    return survivors > 0;
+  }
+  // השורש עצמו נשאר גם כשהוא ריק — האריזה היא שמתלוננת על מראה ריקה.
+  await walk(root);
+  return removed;
+}
+
+const pruned = await pruneEmptyDirs(dataDir);
+if (pruned.length > 0) {
+  console.log(`נוקו ${pruned.length} תיקיות ריקות: ${pruned.join(' | ')}`);
 }
 
 console.log(`המראה מוכנה ב-${dataDir}`);

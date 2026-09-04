@@ -10,8 +10,29 @@
 
 const FIELD_SEP = '\x1f';
 
-/** בקשות שממתינות לתשובה: reqId → {resolve, reject}. */
+/** בקשות שממתינות לתשובה: reqId → {resolve, reject, watchdog}. */
 const pending = new Map();
+
+/**
+ * הפקודות שאין להן גבול זמן סביר, ולכן **אין עליהן שומר**.
+ *
+ * הורדה של תוסף היא עשרות MB בקו איטי, העתקה היא כתיבה לכונן נייד
+ * שעלול להיות אטי, וחלון השמירה פתוח עד שהמשתמש בוחר. לכל אלה אין מספר
+ * שאפשר להגיד עליו "מכאן זה תקוע" — ושומר שהיה יורה עליהן היה **גרוע
+ * מהבאג**: הוא אינו עוצר את ה-host, שממשיך לעבוד, ולכן כל מה שהיה משיג
+ * הוא ניתוק בין שני הצדדים (הממשק אומר "נכשל" בעוד הקובץ נכתב).
+ */
+const UNBOUNDED_COMMANDS = new Set([
+  'net.get', 'net.download', 'fs.copy', 'sys.saveDialog',
+]);
+
+/**
+ * שומר לשאר הפקודות. **אינו פסק זמן של הממשק אלא רשת ביטחון**: כל פקודה
+ * שה-host מכיר משיבה בדיוק פעם אחת, וגם פקודה שאינה מוכרת מקבלת שגיאה —
+ * ולכן אם עברו עשר דקות בלי תשובה משהו נבלע בדרך. בלי זה הבקשה נשארת
+ * תלויה לנצח, והמסך נתקע ב"טוען" בלי שגיאה ובלי כפתור לנסות שוב.
+ */
+const WATCHDOG_MS = 10 * 60 * 1000;
 
 /** מאזינים לאירועים מה-host: שם → קבוצת פונקציות. */
 const listeners = new Map();
@@ -22,6 +43,33 @@ let nextRequestId = 1;
 export const hasHost = typeof chrome !== 'undefined' &&
     chrome.webview !== undefined && chrome.webview !== null;
 
+/**
+ * סוגר בקשה ממתינה: מוציא אותה מהמפה, מכבה את השומר, ומריץ עליה
+ * [apply]. מחזיר `false` אם כבר נסגרה (תשובה שהגיעה פעמיים, או אחרי
+ * שהשומר ירה).
+ */
+function settle(id, apply) {
+  const request = pending.get(id);
+  if (request === undefined) return false;
+  pending.delete(id);
+  if (request.watchdog !== null) clearTimeout(request.watchdog);
+  apply(request);
+  return true;
+}
+
+/**
+ * מחלץ את מזהה הבקשה מתשובה שלא ניתן היה לפרסר.
+ *
+ * ה-host כותב את `id` **ראשון** (ראו `Bridge::ReplyOk`), ולכן הוא קריא
+ * גם כשהמשך המחרוזת פגום — וזה מה שמאפשר לשחרר את מי שממתין לה במקום
+ * להשאיר אותו תלוי.
+ */
+function requestIdOf(text) {
+  if (typeof text !== 'string') return null;
+  const match = /^\s*\{\s*"id"\s*:\s*(\d+)/.exec(text);
+  return match === null ? null : Number(match[1]);
+}
+
 if (hasHost) {
   chrome.webview.addEventListener('message', (raw) => {
     let message;
@@ -31,6 +79,13 @@ if (hasHost) {
       message = JSON.parse(raw.data);
     } catch (error) {
       console.error('הודעה פגומה מה-host:', raw.data, error);
+      // תשובה פגומה אינה מגיעה לאיש — ובלי לשחרר את הבקשה שהיא נועדה
+      // לה, היא הייתה נשארת ממתינה עד סוף ההרצה.
+      const id = requestIdOf(raw.data);
+      if (id !== null) {
+        settle(id, (request) => request.reject(
+            new HostError('תשובה פגומה מה-host')));
+      }
       return;
     }
 
@@ -49,14 +104,13 @@ if (hasHost) {
       return;
     }
 
-    const request = pending.get(message.id);
-    if (request === undefined) return;
-    pending.delete(message.id);
-    if (message.ok) {
-      request.resolve(message.result);
-    } else {
-      request.reject(new HostError(message.error));
-    }
+    settle(message.id, (request) => {
+      if (message.ok) {
+        request.resolve(message.result);
+      } else {
+        request.reject(new HostError(message.error));
+      }
+    });
   });
 }
 
@@ -84,15 +138,30 @@ export function call(command, ...args) {
   }
 
   const id = nextRequestId++;
+  let request;
   const promise = new Promise((resolve, reject) => {
-    pending.set(id, {resolve, reject});
+    request = {resolve, reject, watchdog: null};
   });
+  pending.set(id, request);
+  if (!UNBOUNDED_COMMANDS.has(command)) {
+    request.watchdog = setTimeout(() => {
+      settle(id, (waiting) => waiting.reject(
+          new HostError(`ה-host לא השיב על ${command}`)));
+    }, WATCHDOG_MS);
+  }
 
   const fields = [String(id), command];
   for (const arg of args) {
     fields.push(arg === null || arg === undefined ? '' : String(arg));
   }
-  chrome.webview.postMessage(fields.join(FIELD_SEP));
+  try {
+    chrome.webview.postMessage(fields.join(FIELD_SEP));
+  } catch (error) {
+    // ההודעה לא יצאה, ולכן אין מי שישיב לה. סוגרים כאן ולא משאירים
+    // בקשה שממתינה לתשובה שלא תגיע לעולם.
+    settle(id, (waiting) => waiting.reject(new HostError(
+        `שליחת הפקודה ${command} נכשלה: ${error?.message ?? error}`)));
+  }
   return promise;
 }
 
@@ -119,6 +188,9 @@ export const fs = {
   list: (path) => call('fs.list', path),
   mkdirs: (path) => call('fs.mkdirs', path),
   remove: (path) => call('fs.delete', path),
+  // ⚠️ **ריקה בלבד.** תיקייה שנשאר בה תוכן חוזרת `false` ואינה נמחקת —
+  // ראו `RemoveEmptyDirAt` ב-fsapi.cpp.
+  removeDir: (path) => call('fs.removeDir', path),
   copy: (from, to) => call('fs.copy', from, to),
   rename: (from, to) => call('fs.rename', from, to),
   readBase64: (path, offset, length) =>

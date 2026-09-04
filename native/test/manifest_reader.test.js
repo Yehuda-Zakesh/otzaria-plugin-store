@@ -54,6 +54,76 @@ describe('readPluginManifest — ZIP אמיתי', () => {
   });
 });
 
+/**
+ * בונה "קובץ" שכל תוכנו הוא EOCD אחד, עם הגדלים שנמסרו.
+ *
+ * לא נדרש כאן ZIP אמיתי: מה שנבדק הוא מה שהקורא עושה עם מספרים שהקובץ
+ * **מצהיר** עליהם, ולכן ההצהרה היא כל מה שצריך.
+ */
+function eocdOnly({centralSize, centralOffset}) {
+  const bytes = new Uint8Array(22);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x06054b50, true);   // חתימת EOCD
+  view.setUint16(8, 1, true);            // רשומות בדיסק הזה
+  view.setUint16(10, 1, true);           // סך הרשומות
+  view.setUint32(12, centralSize, true);
+  view.setUint32(16, centralOffset, true);
+  return bytes;
+}
+
+/** io מעל מערך בתים, שמתעד כל קריאה — כמו ה-host, קורא קטוע בסוף הקובץ. */
+function ioOver(bytes) {
+  const reads = [];
+  return {
+    reads,
+    async stat() {
+      return {size: bytes.length};
+    },
+    async readBase64(_path, offset, length) {
+      reads.push({offset, length});
+      const end = Math.min(offset + length, bytes.length);
+      return Buffer.from(bytes.subarray(offset, Math.max(offset, end)))
+          .toString('base64');
+    },
+  };
+}
+
+describe('readPluginManifest — גדלים מהקובץ נבדקים מולו', () => {
+  // ⚠️ כל מיקום וגודל שהקורא משתמש בהם נלקחים **מתוך ה-ZIP**, כלומר הם
+  // קלט לא-מהימן. בלי הבדיקה מול גודל הקובץ, קובץ פגום שמצהיר על ספרייה
+  // מרכזית של כמעט 4GB גרם להקצאה בגודל הזה בצד ה-host — בשביל תוסף של
+  // מאות קילובייטים.
+
+  it('ספרייה מרכזית שמצביעה מעבר לסוף הקובץ אינה נקראת', async () => {
+    const bytes = eocdOnly({centralSize: 100, centralOffset: 22});
+    const io = ioOver(bytes);
+
+    assert.equal(await readPluginManifest('x', io), null);
+    assert.equal(io.reads.length, 1, 'רק זנב ה-EOCD נקרא');
+    assert.deepEqual(io.reads[0], {offset: 0, length: 22});
+  });
+
+  it('גודל אבסורדי אינו הופך לבקשת קריאה אבסורדית', async () => {
+    const bytes = eocdOnly({centralSize: 0xfffffffe, centralOffset: 0});
+    const io = ioOver(bytes);
+
+    assert.equal(await readPluginManifest('x', io), null);
+    assert.ok(io.reads.every((read) => read.length <= bytes.length),
+              `נתבקשה קריאה גדולה מהקובץ: ${JSON.stringify(io.reads)}`);
+  });
+
+  it('ספרייה מרכזית שנכנסת בקובץ כן נקראת', async () => {
+    // הגבול עצמו כלול — אחרת ארכיון תקין שהספרייה שלו נגמרת בדיוק לפני
+    // ה-EOCD היה נפסל.
+    const bytes = eocdOnly({centralSize: 22, centralOffset: 0});
+    const io = ioOver(bytes);
+
+    assert.equal(await readPluginManifest('x', io), null, 'אין manifest');
+    assert.equal(io.reads.length, 2, 'הזנב, ואחריו הספרייה עצמה');
+    assert.deepEqual(io.reads[1], {offset: 0, length: 22});
+  });
+});
+
 describe('readPluginManifest — כשלים מוחזרים כ-null ולא כחריג', () => {
   // תוסף בודד עם קובץ פגום פשוט לא ישווה למותקן, וזה עדיף על הפלת
   // הסנכרון כולו. זו ההתנהגות המתועדת במקור.

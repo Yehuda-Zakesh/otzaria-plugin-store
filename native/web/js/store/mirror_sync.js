@@ -8,7 +8,7 @@
 // מה הן מונעות.
 
 import {S} from '../strings.js';
-import {PluginCatalog, PluginLocalFile, PluginStoreCategory,
+import {PluginLocalFile, PluginStoreCategory,
         PluginStoreHome, StorePlugin} from './models.js';
 import {readPluginManifestId} from './manifest_reader.js';
 import {describeError} from './store_client.js';
@@ -74,7 +74,8 @@ export class PluginMirrorSync {
 
     const plans = [];
     for (const raw of remote) {
-      plans.push(await this.#plan(raw, existing, appVersions));
+      const plan = await this.#plan(raw, existing, appVersions);
+      if (plan !== null) plans.push(plan);
     }
     const todo = plans.filter((plan) => plan.hasWork);
 
@@ -91,21 +92,40 @@ export class PluginMirrorSync {
           if (cancelled()) return;
           done++;
 
-          let plugin = plan.plugin;
-          report({
-            phase: SyncPhase.plugin,
-            message: S.domain.syncPlugin(plugin.name, done, total),
-            current: done,
-            total,
-          });
+          // ⚠️ **כשל בתוסף אחד אינו מפיל את הסנכרון.** ההורדות עצמן
+          // מטופלות בתוך השלבים, אבל פעולות הדיסק שסביבן (`mkdirs` על
+          // תיקיית התוסף, למשל) זרקו החוצה — ו-`runPooled` מגלגל את
+          // החריג הלאה, כך שהקטלוג לא נשמר כלל וכל מה שכן ירד בריצה
+          // הזאת נשאר על הדיסק בלי רישום, להורדה מחדש בפעם הבאה.
+          // תוסף אחד עם תיקייה נעולה עלה בסנכרון שלם.
+          try {
+            let plugin = plan.plugin;
+            report({
+              phase: SyncPhase.plugin,
+              message: S.domain.syncPlugin(plugin.name, done, total),
+              current: done,
+              total,
+            });
 
-          await this.store.fs.mkdirs(this.store.pluginDir(plugin.id));
-          plugin = await this.#syncImages(plan, plugin, report);
-          const files = await this.#syncPluginFiles(plan, plugin, report);
-          plugin = files.plugin;
+            await this.store.fs.mkdirs(this.store.pluginDir(plugin.id));
+            plugin = await this.#syncImages(plan, plugin, report);
+            const files = await this.#syncPluginFiles(plan, plugin, report);
+            plugin = files.plugin;
 
-          fetched.set(plugin.id, plugin);
-          if (!files.ok) failed.push(plugin.name);
+            fetched.set(plugin.id, plugin);
+            if (!files.ok) failed.push(plugin.name);
+          } catch (error) {
+            // בלי `fetched` — הרשומה נופלת חזרה על `plan.plugin`, שנושא
+            // את הבילדים שאומתו על הדיסק בשלב התכנון ותו לא. קובץ שירד
+            // רגע לפני הכשל אינו רשום, ולכן `pruneUnusedFiles` ינקה
+            // אותו והסנכרון הבא יביא אותו שוב.
+            failed.push(plan.plugin.name);
+            report({
+              phase: SyncPhase.warning,
+              message: S.domain.syncPluginFileFailed(plan.plugin.name,
+                                                     describeError(error)),
+            });
+          }
         }),
         this.maxConcurrentPlugins);
 
@@ -130,7 +150,11 @@ export class PluginMirrorSync {
            slugsOf: () => []}
         : await this.#syncStructure(syncedIds, previousCatalog, report);
 
-    const catalog = new PluginCatalog({
+    // ⚠️ `copyWith` על הקטלוג הקודם ולא `new PluginCatalog({...})`: כל
+    // חמשת השדות אמנם נמסרים כאן במפורש, אבל בנייה מאפס פירושה ששדה
+    // שיתווסף בעתיד יימחק מהמראה בשקט בכל סנכרון. זה בדיוק מה שקרה
+    // ל-`targetAppVersions` במסלול ההתקנה.
+    const catalog = previousCatalog.copyWith({
       lastSync: new Date(),
       // מה שהמראה נבנתה עבורו, כדי שהמחשב הלא-מקוון יוכל להסביר תוסף
       // שאינו מוצג אצלו. **בביטול נשמר הקודם**: הקבצים שעל הכונן הם
@@ -150,7 +174,17 @@ export class PluginMirrorSync {
     // **לא בביטול**: שם הקטלוג הוא הישן, והניקוי היה מוחק את מה שכן ירד.
     if (!wasCancelled) {
       for (const plugin of catalog.plugins) {
-        await this.store.pruneUnusedFiles(plugin);
+        try {
+          await this.store.pruneUnusedFiles(plugin);
+        } catch (error) {
+          // הקטלוג כבר נשמר, והסנכרון הצליח. שארית על הדיסק אינה סיבה
+          // להציג למשתמש כישלון.
+          report({
+            phase: SyncPhase.warning,
+            message: S.domain.syncPluginFileFailed(plugin.name,
+                                                   describeError(error)),
+          });
+        }
       }
     }
 
@@ -182,15 +216,30 @@ export class PluginMirrorSync {
   /**
    * מה חסר לתוסף הזה במראה — כל ההחלטות במקום אחד, ובלי רשת. השלבים
    * שמורידים בפועל רק מבצעים את מה שנקבע כאן.
+   *
+   * `null` לרשומה שאין לה `id`: כל הנכסים של תוסף נשמרים תחת
+   * `plugins\<id>\`, וב-id ריק היעד הוא שורש `plugins\` עצמו — התמונות
+   * וקובצי ה-.otzplugin היו נוחתים לצד הקטלוג, ו-`pruneUnusedFiles` היה
+   * סורק את השורש ומוחק שם כל קובץ ששמו מתחיל ב-`plugin`. `comparePeek`
+   * מדלג על אותן רשומות בדיוק, וכך השניים אומרים את אותו דבר.
    */
   async #plan(raw, existing, appVersions) {
     const remote = StorePlugin.fromApi(raw, this.client.baseUrl);
+    if (!remote.id) return null;
     const previous = existing.get(remote.id) ?? null;
 
     // שומרים על מה שכבר יש מקומית, ומעדכנים רק את מה שבאמת ירד עכשיו.
+    //
+    // ⚠️ **נכס שהאתר הסיר נמחק מהרשומה כאן, ולא מחכה להורדה חדשה.**
+    // הנתיבים המקומיים הועברו קודם בלי תנאי, ואילו `needsImage` דורש
+    // `remoteImageUrl` לא-ריק — כלומר תמונה שהוסרה מהאתר לא נחשבה
+    // "שינוי", לא ירדה, ולכן גם לא נדרסה: המראה המשיכה להציג אותה
+    // לנצח, והקובץ נשאר על הכונן. אותו דבר לרשימת צילומי מסך שהתרוקנה.
     let plugin = remote.copyWith({
-      imagePath: previous?.imagePath ?? null,
-      screenshotPaths: previous?.screenshotPaths ?? [],
+      imagePath: remote.remoteImageUrl ? (previous?.imagePath ?? null) : null,
+      screenshotPaths: remote.remoteScreenshotUrls.length > 0
+          ? (previous?.screenshotPaths ?? [])
+          : [],
       localFiles: previous?.localFiles ?? new Map(),
       manifestId: previous?.manifestId ?? null,
     });

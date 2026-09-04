@@ -48,7 +48,7 @@ export function h(tag, propsOrChild = null, ...rest) {
           element.dataset[dataKey] = dataValue;
         }
       } else if (key === 'style' && typeof value === 'object') {
-        Object.assign(element.style, value);
+        applyStyle(element, value);
       } else {
         element.setAttribute(key, String(value));
       }
@@ -57,6 +57,26 @@ export function h(tag, propsOrChild = null, ...rest) {
 
   append(element, children);
   return element;
+}
+
+/**
+ * מחיל את `style`.
+ *
+ * ⚠️ **משתנה CSS (`--x`) חייב `setProperty`.** `CSSStyleDeclaration` חושף
+ * תכונה לכל מאפיין CSS מוכר, אבל למשתנים אין תכונה כזאת — ולכן השמה
+ * ישירה (`style['--x'] = …`, וגם `Object.assign` שעושה בדיוק את זה)
+ * יוצרת שדה JS רגיל על האובייקט ו**אינה נוגעת בעיצוב בכלל**, בשקט. זה
+ * מה שקרה ל-`--stars-fill`: שכבת הכוכבים המלאים נשארה ברוחב ברירת
+ * המחדל (0%), וכל דירוג בחנות נראה כאילו התוסף מעולם לא דורג.
+ */
+function applyStyle(element, style) {
+  for (const [key, value] of Object.entries(style)) {
+    if (key.startsWith('--')) {
+      element.style.setProperty(key, String(value));
+    } else {
+      element.style[key] = value;
+    }
+  }
 }
 
 /** מוסיף ילדים, מדלג על `null`/`false` כדי שתנאים יהיו inline. */

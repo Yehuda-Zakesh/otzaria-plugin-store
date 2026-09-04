@@ -118,7 +118,13 @@ Result WriteTextAtomic(const std::wstring& path, const std::string& utf8_text) {
       const DWORD want = static_cast<DWORD>(
           (utf8_text.size() - done) > 0x10000000 ? 0x10000000
                                                  : (utf8_text.size() - done));
-      if (!WriteFile(file.get(), utf8_text.data() + done, want, &written, nullptr)) {
+      // `written == 0` בלי שגיאה הוא כתיבה שאינה מתקדמת (כונן שהתמלא
+      // מדווח כך על חלק מהמערכות), ובלי הבדיקה הזאת הלולאה מסתובבת
+      // לנצח על ה-thread של הפעולה. אותו שיקול כמו ב-`WriteAll`
+      // שב-overlay.cpp.
+      if (!WriteFile(file.get(), utf8_text.data() + done, want, &written,
+                     nullptr) ||
+          written == 0) {
         return Result::Fail(Describe(L"כתיבה נכשלה", temp));
       }
       done += written;
@@ -209,6 +215,20 @@ Result DeleteFileAt(const std::wstring& path) {
     return Result::Ok("true");
   }
   return Result::Fail(Describe(L"מחיקת הקובץ נכשלה", path));
+}
+
+Result RemoveEmptyDirAt(const std::wstring& path) {
+  if (RemoveDirectoryW(path.c_str())) return Result::Ok("true");
+  const DWORD error = GetLastError();
+  // המצב המבוקש הושג — התיקייה אינה שם.
+  if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
+    return Result::Ok("true");
+  }
+  // תיקייה שאינה ריקה אינה תקלה אלא תשובה: נשאר בה משהו שאין למחוק.
+  // הקורא מתייחס ל-`false` כאל "השאר אותה", ולכן אין כאן `Fail` —
+  // שגיאה הייתה מפילה את הגריעה כולה על שארית שאינה מזיקה.
+  if (error == ERROR_DIR_NOT_EMPTY) return Result::Ok("false");
+  return Result::Fail(Describe(L"מחיקת התיקייה נכשלה", path));
 }
 
 Result CopyFileTo(const std::wstring& from, const std::wstring& to) {

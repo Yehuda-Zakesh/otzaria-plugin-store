@@ -99,8 +99,13 @@ jobs:
         shell: pwsh
         run: |
           $out = 'native\build'
-          $stray = Get-ChildItem $out -File |
-            Where-Object { $_.Extension -in '.dll', '.pdb' -or
+          # ⚠️ בלי `-File`: `app-files` הוא **תיקייה**, ו-`-File` סינן
+          # תיקיות מהרשימה — כלומר החצי שבודק שאין תיקיית חילוץ ליד
+          # ה-exe מעולם לא היה יכול להתקיים. זו ההבטחה המרכזית של
+          # הפרויקט, והשומר עליה היה קוד מת.
+          $stray = Get-ChildItem $out |
+            Where-Object { (-not $_.PSIsContainer -and
+                            $_.Extension -in '.dll', '.pdb') -or
                            $_.Name -eq 'app-files' }
           if ($stray) {
             Write-Error "קבצים שאינם אמורים להתפרסם: $($stray.Name -join ', ')"

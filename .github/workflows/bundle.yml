@@ -123,9 +123,12 @@ jobs:
           node native/tools/mirror_changed.mjs \
             catalog.before.json Data/catalog.json \
             inventory.before.txt Data/plugins
+          # ⚠️ הקודים זרים לקוד היציאה שנוד מחזיר מעצמו על חריג (1) —
+          # ראו [EXIT] ב-mirror_changed.mjs. קריסה של הכלי חייבת להפיל
+          # את הג'וב, ולא להיראות כמו "אין מה לפרסם".
           case $? in
             0) echo "publish=true"  >> "$GITHUB_OUTPUT" ;;
-            1) echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+            3) echo "publish=false" >> "$GITHUB_OUTPUT" ;;
             *) exit 1 ;;
           esac
 

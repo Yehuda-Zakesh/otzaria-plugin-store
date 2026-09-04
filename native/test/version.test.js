@@ -36,6 +36,27 @@ describe('comparePluginVersions', () => {
     assert.equal(comparePluginVersions('v2.0.0-rc1', 'v1.9.9'), 1);
   });
 
+  // ⚠️ הסיומת ירדה קודם ברמת המקטע ולא ברמת המחרוזת, ולכן `-beta.1`
+  // פוצל ל-`'0-beta'` ועוד מקטע `'1'` — והזנב דירג. `1.0.0-beta.1` יצא
+  // גבוה מ-`1.0.0`: הביתא עלתה לראש `sortedDescending`, נבחרה כבילד
+  // להתקנה, והכריזה "עדכון זמין" על יציבה שכבר מותקנת.
+  it('סיומת prerelease מנוקדת אינה מדרגת גם היא', () => {
+    assert.equal(comparePluginVersions('1.0.0-beta.1', '1.0.0'), 0);
+    assert.equal(comparePluginVersions('1.2.3+7.1', '1.2.3'), 0);
+    assert.equal(comparePluginVersions('1.0.0-rc.2', '1.0.0-rc.10'), 0);
+    assert.equal(comparePluginVersions('2.0.0-beta.1', '1.0.0'), 1);
+    assert.equal(comparePluginVersions('1.0.0-alpha.9', '1.0.1'), -1);
+  });
+
+  it('יציבה אינה נמוכה מה-prerelease שלה במיון', () => {
+    const sorted = ['1.0.0-beta.1', '1.0.0', '0.9.0']
+        .sort((a, b) => comparePluginVersions(b, a));
+    // שוויון שומר על סדר המקור, ולכן היציבה אינה **מעל** הביתא — אבל
+    // היא בוודאי אינה מתחתיה, וזה מה שנשבר.
+    assert.equal(sorted[2], '0.9.0');
+    assert.equal(comparePluginVersions(sorted[0], sorted[1]), 0);
+  });
+
   it('קלט חסר או זבל אינו מפיל', () => {
     assert.equal(comparePluginVersions(null, null), 0);
     assert.equal(comparePluginVersions(undefined, '0'), 0);

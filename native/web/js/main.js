@@ -131,9 +131,19 @@ async function main() {
   // רינדור מלא בכל שינוי מצב. המסך הוא כמה עשרות אלמנטים, והבקר הוא
   // מקור האמת היחיד — ראו ההערה בראש `ui/screens.js`.
   let scrollTop = 0;
+  /**
+   * האם לקרוא את מקום הגלילה מהמסך היוצא לפני שהוא מוחלף.
+   *
+   * ⚠️ **הניווט מכבה את זה, וזה כל מה שמאפס את הגלילה.** הרינדור קורה
+   * בתוך הניווט (`showCategory` → `#notify`), ולכן קריאה בלתי-מותנית
+   * כאן דורסת מיד את האיפוס שנעשה רגע לפניה — והמסך החדש נפתח בגובה
+   * שאליו גלל הקודם.
+   */
+  let keepScroll = true;
   controller.subscribe(() => {
     const scroller = body.querySelector('.store__scroll');
-    if (scroller !== null) scrollTop = scroller.scrollTop;
+    if (keepScroll && scroller !== null) scrollTop = scroller.scrollTop;
+    keepScroll = true;
     renderStore(body, controller, {readOnly: info.readOnly});
     // שמירת מקום הגלילה: בלעדיה כל דיווח התקדמות היה מקפיץ את הרשימה
     // לראש המסך.
@@ -146,6 +156,7 @@ async function main() {
   const resetOnNavigate = () => {
     resetLocalViewState();
     scrollTop = 0;
+    keepScroll = false;
   };
   for (const method of ['showHome', 'showAllPlugins', 'showCategory',
                         'openPlugin', 'closePlugin']) {

@@ -6,6 +6,7 @@
 
 #include <winhttp.h>
 
+#include <cstdint>
 #include <vector>
 
 namespace otz::netapi {
@@ -114,6 +115,23 @@ std::wstring ResponseHeader(HINTERNET request, const wchar_t* name) {
   value.resize(size / sizeof(wchar_t));
   while (!value.empty() && value.back() == L'\0') value.pop_back();
   return value;
+}
+
+// אורך הגוף שהשרת הצהיר עליו, או `-1` כשאין הצהרה — תשובת `chunked`
+// היא המקרה השכיח, וגם היא לגיטימית לחלוטין.
+long long DeclaredLength(HINTERNET request) {
+  ULONGLONG value = 0;
+  DWORD size = sizeof(value);
+  if (!WinHttpQueryHeaders(
+          request, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER64,
+          WINHTTP_HEADER_NAME_BY_INDEX, &value, &size,
+          WINHTTP_NO_HEADER_INDEX)) {
+    return -1;
+  }
+  // גודל שאינו נכנס ל-`long long` אינו הורדה אמיתית; מתייחסים אליו
+  // כאילו לא הוצהר דבר.
+  if (value > static_cast<ULONGLONG>(INT64_MAX)) return -1;
+  return static_cast<long long>(value);
 }
 
 DWORD StatusCode(HINTERNET request) {
@@ -300,6 +318,19 @@ Result Download(const std::wstring& url, const std::wstring& dest_path,
     }));
   }
 
+  // כמה בייטים אמורים להגיע. זו ההגנה על ההבטחה שבראש netapi.h —
+  // "הקובץ נכתב במלואו לפני שהוא נחשב תקין": בלעדיה גוף שנקטע בדרך
+  // (פרוקסי שניתק, חיבור שנסגר בין מנות) נספר כהורדה מוצלחת, וה-JS
+  // מעביר `.part` קטוע לשם הסופי — כלומר תוסף פגום שנראה תקין.
+  //
+  // ⚠️ מדלגים כשיש `Content-Encoding`: עם הדחיסה השקופה שהודלקה
+  // ב-[OpenGet] הכותרת מתארת את הגודל **הדחוס**, ומה שנכתב לדיסק הוא
+  // הפרוס. השוואה כזאת הייתה פוסלת הורדות תקינות.
+  const bool encoded =
+      !ResponseHeader(request.request.get(), L"Content-Encoding").empty();
+  const long long declared =
+      encoded ? -1 : DeclaredLength(request.request.get());
+
   const size_t slash = dest_path.find_last_of(L"\\/");
   if (slash != std::wstring::npos && !CreateDirectories(dest_path.substr(0, slash))) {
     return Result::Fail(L"יצירת תיקיית היעד נכשלה: " + dest_path);
@@ -336,6 +367,17 @@ Result Download(const std::wstring& url, const std::wstring& dest_path,
       break;
     }
     total += written;
+  }
+
+  // ⚠️ רק `total < declared`, ולא אי-שוויון: גוף שהגיע **שלם** ובכל
+  // זאת ארוך מההצהרה פירושו שהכותרת תיארה משהו אחר ממה שנכתב (למשל
+  // תשובה שנפרסה אף שלא נשאה `Content-Encoding` שאפשר לראות), וזו אינה
+  // סיבה לזרוק הורדה תקינה. חסר לעומת ההצהרה, לעומת זאת, הוא תמיד
+  // קטיעה.
+  if (!failed && declared >= 0 && total < declared) {
+    failure = L"ההורדה נקטעה: התקבלו " + std::to_wstring(total) +
+              L" בייטים מתוך " + std::to_wstring(declared) + L"\n" + url;
+    failed = true;
   }
 
   const bool flushed = FlushFileBuffers(file) != 0;

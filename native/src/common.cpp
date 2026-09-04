@@ -10,30 +10,39 @@ std::wstring g_log_path;
 
 // שני התווים שאסורים גולמיים ב-JSON ומחייבים escape משלהם, מעל תווי
 // הבקרה. הגרש הבודד אינו ביניהם — JSON אינו דורש לו escape.
-constexpr wchar_t kQuote = L'"';
-constexpr wchar_t kBackslash = L'\\';
+constexpr char kQuote = '"';
+constexpr char kBackslash = '\\';
 
-void AppendEscaped(std::string& out, wchar_t ch) {
-  switch (ch) {
+// ⚠️ עובד על **בייט** של UTF-8, לא על תו של UTF-16. זה מכוון: תו מעל
+// ה-BMP (אימוג'י, וגם שמות תיקיות שמכילים אותו) הוא זוג surrogate בשני
+// `wchar_t`, והמרה של כל אחד מהם לבדו הייתה מוסרת ל-UTF-8 חצי-זוג —
+// שאותו ווינדוס מחליף בשקט ב-U+FFFD. התוצאה הייתה נתיב מקולקל שחוזר
+// ל-JS ונכשל בכל פעולת קובץ אחריו. לכן ההמרה נעשית פעם אחת על המחרוזת
+// כולה, וכאן רק בורחים מהבייטים שמחייבים זאת.
+void AppendEscaped(std::string& out, char byte) {
+  switch (byte) {
     case kQuote: out += "\\\""; return;
     case kBackslash: out += "\\\\"; return;
-    case L'\b': out += "\\b"; return;
-    case L'\f': out += "\\f"; return;
-    case L'\n': out += "\\n"; return;
-    case L'\r': out += "\\r"; return;
-    case L'\t': out += "\\t"; return;
+    case '\b': out += "\\b"; return;
+    case '\f': out += "\\f"; return;
+    case '\n': out += "\\n"; return;
+    case '\r': out += "\\r"; return;
+    case '\t': out += "\\t"; return;
     default: break;
   }
-  if (ch < 0x20) {
+  // דרך `unsigned char`: `char` הוא מסומן ב-MSVC, ובלי ההמרה כל בייט
+  // של UTF-8 מעל 0x7F היה נראה שלילי ונופל לענף תווי הבקרה.
+  const auto value = static_cast<unsigned char>(byte);
+  if (value < 0x20) {
     // `\u00XX` — JSON אוסר תווי בקרה גולמיים בתוך מחרוזת.
     char buffer[7];
-    wsprintfA(buffer, "\\u%04x", static_cast<unsigned>(ch));
+    wsprintfA(buffer, "\\u%04x", static_cast<unsigned>(value));
     out += buffer;
     return;
   }
   // כל השאר יוצא כמו שהוא ב-UTF-8. אין בריחה ל-`\uXXXX` לתווים שאינם
   // ASCII: העברית עוברת כ-UTF-8 תקין, וזה מה ש-JSON מצפה לו.
-  out += Utf8(std::wstring_view(&ch, 1));
+  out += byte;
 }
 
 }  // namespace
@@ -75,17 +84,20 @@ std::vector<std::wstring> SplitFields(std::wstring_view message) {
   }
 }
 
-std::string JsonString(std::wstring_view text) {
+std::string JsonString(std::string_view text) {
   std::string out;
-  // הערכה גסה שחוסכת את רוב ההקצאות מחדש: רוב התווים הם בית או שניים.
-  out.reserve(text.size() * 2 + 2);
+  // רוב הבייטים יוצאים כמו שהם, ולכן זו כמעט תמיד ההקצאה היחידה.
+  out.reserve(text.size() + 2);
   out += '"';
-  for (const wchar_t ch : text) AppendEscaped(out, ch);
+  for (const char byte : text) AppendEscaped(out, byte);
   out += '"';
   return out;
 }
 
-std::string JsonString(std::string_view text) { return JsonString(Utf16(text)); }
+// ההמרה ל-UTF-8 קודמת ל-escaping ונעשית על המחרוזת **כולה** — ראו
+// [AppendEscaped]. `Utf8` מחזיר `std::string`, ולכן זו קריאה לעומס
+// שמעליו ולא רקורסיה.
+std::string JsonString(std::wstring_view text) { return JsonString(Utf8(text)); }
 
 std::string JsonBool(bool value) { return value ? "true" : "false"; }
 

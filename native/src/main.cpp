@@ -41,6 +41,7 @@
 #include <wrl/implements.h>
 
 #include <cwchar>
+#include <exception>
 #include <memory>
 #include <string>
 #include <vector>
@@ -111,6 +112,18 @@ std::wstring PercentDecode(std::wstring_view text) {
   // של תו אחד, ופענוח לתווים בודדים היה שובר אותו.
   std::string bytes;
   bytes.reserve(text.size());
+
+  // ⚠️ המקטעים שאינם מקודדים נאספים ומומרים **בגוש**. המרה של יחידת
+  // UTF-16 בודדת הייתה שוברת זוג surrogate — תו מעל ה-BMP יוצא בשני
+  // `wchar_t`, וכל אחד מהם לבדו אינו תו חוקי וווינדוס מחליף אותו
+  // ב-U+FFFD. הנתיב שהיה נבנה כאן פשוט לא היה קיים על הדיסק.
+  std::wstring plain;
+  const auto flush = [&bytes, &plain] {
+    if (plain.empty()) return;
+    bytes += Utf8(plain);
+    plain.clear();
+  };
+
   for (size_t i = 0; i < text.size(); ++i) {
     if (text[i] == L'%' && i + 2 < text.size()) {
       const auto hex = [](wchar_t c) -> int {
@@ -122,18 +135,19 @@ std::wstring PercentDecode(std::wstring_view text) {
       const int high = hex(text[i + 1]);
       const int low = hex(text[i + 2]);
       if (high >= 0 && low >= 0) {
+        flush();
         bytes.push_back(static_cast<char>(high * 16 + low));
         i += 2;
         continue;
       }
     }
-    if (text[i] == L'+') {
-      bytes.push_back(' ');
-      continue;
-    }
-    // תו שאינו מקודד — יוצא כ-UTF-8.
-    bytes += Utf8(std::wstring_view(&text[i], 1));
+    // ⚠️ `+` אינו רווח כאן. הקידוד הזה שייך ל-query בלבד, והקורא כבר
+    // חתך אותה ב-`?`; בנתיב `+` הוא פלוס ממש, ורווח מגיע כ-`%20`
+    // (`encodeURIComponent` ב-`assetUrl`, שגם מוציא פלוס כ-`%2B`).
+    // תרגום שלו לרווח היה מחזיר 404 על קובץ ששמו מכיל פלוס.
+    plain.push_back(text[i]);
   }
+  flush();
   return Utf16(bytes);
 }
 
@@ -239,15 +253,23 @@ bool ReadDataFile(const std::wstring& relative, std::vector<uint8_t>& out) {
   while (done < out.size()) {
     DWORD read = 0;
     if (!ReadFile(file, out.data() + done,
-                  static_cast<DWORD>(out.size() - done), &read, nullptr) ||
-        read == 0) {
+                  static_cast<DWORD>(out.size() - done), &read, nullptr)) {
+      const DWORD error = GetLastError();
+      LogError(L"קריאת קובץ להגשה נכשלה: " + path + L" — " +
+               MessageForError(error));
       break;
     }
+    if (read == 0) break;
     done += read;
   }
   CloseHandle(file);
+
+  // ⚠️ קריאה חלקית אינה הצלחה חלקית. הקורא מגיש כל `true` כתשובת 200,
+  // ותמונה קטועה נראית בממשק כתקלה שלו ואינה משאירה שום עקבה. 404 על
+  // קובץ שלא הצלחנו לקרוא הוא גם נכון וגם ניתן לאיתור.
+  const bool complete = done == out.size();
   out.resize(done);
-  return true;
+  return complete;
 }
 
 // ── פריסת החבילה ─────────────────────────────────────────────────────────────
@@ -313,11 +335,25 @@ bool RunOverlaySetup(HINSTANCE instance, const OverlayInfo& overlay,
   DeleteFileW(g_paths.CatalogPath().c_str());
 
   // ── הפריסה ────────────────────────────────────────────────────────────
+  // ⚠️ ה-`catch` אינו קוסמטי. כל שדות האורך שנפרסים כאן מגיעים מקובץ
+  // שהמשתמש הוריד מהרשת, ולמרות שכולם נבדקים, הקצאה שנכשלת (‏`vector`
+  // על מכונה עמוסה) זורקת — ובלי תפיסה החריג היה מפיל את התהליך
+  // בדיאלוג של ווינדוס, במקום להגיד למשתמש שהחבילה פגומה ושכדאי
+  // להוריד אותה מחדש.
   std::wstring error;
-  const bool extracted = ExtractOverlay(
-      exe_path, overlay, g_paths.data_dir,
-      [&progress](uint64_t done, uint64_t total) { progress.Update(done, total); },
-      error);
+  bool extracted = false;
+  try {
+    extracted = ExtractOverlay(
+        exe_path, overlay, g_paths.data_dir,
+        [&progress](uint64_t done, uint64_t total) {
+          progress.Update(done, total);
+        },
+        error);
+  } catch (const std::exception& thrown) {
+    error = L"שגיאה בלתי צפויה בפריסה: " + Utf16(thrown.what());
+  } catch (...) {
+    error = L"שגיאה בלתי צפויה בפריסה.";
+  }
   if (!extracted) {
     progress.Close();
     LogError(L"פריסת החבילה נכשלה: " + error);
@@ -506,6 +542,10 @@ HRESULT OnWebViewReady(ICoreWebView2Environment* environment,
             const std::wstring uri(raw_uri);
             CoTaskMemFree(raw_uri);
 
+            // המסנן אמור להבטיח את התחילית, אבל `substr` על מחרוזת קצרה
+            // ממנה זורק חריג — ומ-callback של COM אין לו לאן לצאת.
+            if (uri.rfind(kAppOrigin, 0) != 0) return S_OK;
+
             // הנתיב שאחרי המקור, בלי query ובלי fragment.
             std::wstring path = uri.substr(wcslen(kAppOrigin));
             const size_t cut = path.find_first_of(L"?#");
@@ -513,6 +553,7 @@ HRESULT OnWebViewReady(ICoreWebView2Environment* environment,
             if (path.empty() || path == L"/") path = L"/index.html";
 
             ComPtr<ICoreWebView2WebResourceResponse> response;
+            HRESULT hr = E_FAIL;
 
             // קובץ מתוך `Data\` — תמונה או צילום מסך של תוסף.
             if (path.rfind(kDataPathPrefix, 0) == 0) {
@@ -520,22 +561,30 @@ HRESULT OnWebViewReady(ICoreWebView2Environment* environment,
                   PercentDecode(path.substr(wcslen(kDataPathPrefix)));
               std::vector<uint8_t> bytes;
               if (ReadDataFile(relative, bytes)) {
-                MakeResponse(env.Get(), bytes.data(), bytes.size(),
-                             ContentTypeFor(Utf8(relative)), &response);
+                hr = MakeResponse(env.Get(), bytes.data(), bytes.size(),
+                                  ContentTypeFor(Utf8(relative)), &response);
               } else {
-                MakeNotFound(env.Get(), &response);
+                hr = MakeNotFound(env.Get(), &response);
               }
-              args->put_Response(response.Get());
-              return S_OK;
+            } else {
+              // קובץ ממשק מתוך החבילה שב-exe.
+              const std::string key = Utf8(path.substr(1));
+              if (const std::vector<uint8_t>* file = g_bundle.Find(key)) {
+                hr = MakeResponse(env.Get(), file->data(), file->size(),
+                                  ContentTypeFor(key), &response);
+              } else {
+                hr = MakeNotFound(env.Get(), &response);
+              }
             }
 
-            // קובץ ממשק מתוך החבילה שב-exe.
-            const std::string key = Utf8(path.substr(1));
-            if (const std::vector<uint8_t>* file = g_bundle.Find(key)) {
-              MakeResponse(env.Get(), file->data(), file->size(),
-                           ContentTypeFor(key), &response);
-            } else {
-              MakeNotFound(env.Get(), &response);
+            // ⚠️ `put_Response(nullptr)` אינו "תשובה ריקה" אלא "אינני
+            // מטפל בבקשה": ה-WebView2 היה יוצא איתה לרשת, אל מקור
+            // `.invalid` שלעולם אינו נפתר, והמשתמש היה מקבל חלון ריק
+            // בלי שום רמז. אין מה למסור — אבל יש מה לרשום.
+            if (FAILED(hr) || response == nullptr) {
+              LogError(L"בניית התשובה נכשלה עבור " + path + L": " +
+                       MessageForError(static_cast<DWORD>(hr)));
+              return S_OK;
             }
             args->put_Response(response.Get());
             return S_OK;
@@ -548,6 +597,12 @@ HRESULT OnWebViewReady(ICoreWebView2Environment* environment,
       Callback<ICoreWebView2WebMessageReceivedEventHandler>(
           [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args)
               -> HRESULT {
+            // ⚠️ המטפלים כאן אינם מוסרים לעולם, והגשר נהרס **לפני**
+            // ה-WebView2 (ראו סוף `wWinMain`). שחרור ה-WebView2 הוא
+            // קריאת COM בין תהליכים, וה-STA שואב הודעות בזמן ההמתנה —
+            // כך שהודעה שכבר הייתה בדרך יכולה להגיע לכאן אחרי ההריסה.
+            if (g_bridge == nullptr) return S_OK;
+
             LPWSTR message = nullptr;
             if (FAILED(args->TryGetWebMessageAsString(&message)) ||
                 message == nullptr) {
@@ -625,17 +680,22 @@ void CreateWebView() {
               return S_OK;
             }
 
+            // ה-`environment` נמסר לנו בהשאלה לאורך הקריאה הזאת בלבד,
+            // והמטפל שלמטה מוחזק אחריה — עד שיצירת ה-controller תיגמר.
+            // לכן ComPtr ולא מצביע גולמי: ספירת ההפניות היא מה שמחזיק
+            // אותו בחיים עד אז.
             environment->CreateCoreWebView2Controller(
                 g_window,
                 Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                    [environment](HRESULT create_result,
-                                  ICoreWebView2Controller* controller) -> HRESULT {
+                    [env = ComPtr<ICoreWebView2Environment>(environment)](
+                        HRESULT create_result,
+                        ICoreWebView2Controller* controller) -> HRESULT {
                       if (FAILED(create_result) || controller == nullptr) {
                         LogError(L"יצירת ה-WebView2 נכשלה");
                         PostQuitMessage(1);
                         return S_OK;
                       }
-                      return OnWebViewReady(environment, controller);
+                      return OnWebViewReady(env.Get(), controller);
                     })
                     .Get());
             return S_OK;

@@ -5,6 +5,18 @@
 const LEADING_DIGITS = /^\d+/;
 
 /**
+ * סיומת prerelease/build והכול אחריה — `-beta.1`, `+736`, `-rc.2`.
+ *
+ * ⚠️ **חייבת לרדת לפני הפיצול לנקודות.** כשהיא ירדה רק ברמת המקטע,
+ * `1.0.0-beta.1` פוצל ל-`['1','0','0-beta','1']` והזנב `1` נכנס כמקטע
+ * **רביעי** — כלומר ה-prerelease דווקא כן דירג, ו-`1.0.0-beta.1` יצא גבוה
+ * מ-`1.0.0`. התוצאה: `sortedDescending` העלה את הביתא לראש הרשימה,
+ * `resolveCompatibleVersion` בחר בה כבילד להתקנה, ו-`statusAgainst` הכריז
+ * "עדכון זמין" על יציבה שכבר מותקנת.
+ */
+const SUFFIX = /[-+].*$/;
+
+/**
  * semver בסיסי (`major.minor.patch`), מחזיר 1 / 0 / -1.
  *
  * אורך שונה מרופד באפסים, כך ש-`1.2` ו-`1.2.0` שקולים. קידומת `v` וסיומת
@@ -37,6 +49,7 @@ export function comparePluginVersions(a, b) {
 function parts(version) {
   let text = String(version ?? '0').trim();
   if (text.startsWith('v') || text.startsWith('V')) text = text.slice(1);
+  text = text.replace(SUFFIX, '');
 
   return text.split('.').map((segment) => {
     const digits = LEADING_DIGITS.exec(segment.trim());

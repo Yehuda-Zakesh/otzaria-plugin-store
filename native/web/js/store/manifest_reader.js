@@ -34,6 +34,17 @@ const DEFLATED = 8;
 
 const MANIFEST_ENTRY_NAME = 'manifest.json';
 
+/**
+ * האם הקטע [offset..offset+length) יושב כולו בתוך קובץ בגודל [fileSize].
+ *
+ * כל מיקום וגודל שהקורא הזה משתמש בהם נלקחים מתוך ה-ZIP עצמו, ולכן הם
+ * קלט לא-מהימן: קובץ קטוע או פגום מצהיר עליהם כרצונו.
+ */
+function withinFile(offset, length, fileSize) {
+  return Number.isFinite(offset) && Number.isFinite(length) &&
+      offset >= 0 && length >= 0 && offset + length <= fileSize;
+}
+
 /** ממיר base64 לבתים. */
 function bytesFromBase64(base64) {
   const binary = atob(base64);
@@ -63,7 +74,7 @@ export async function readPluginManifest(pluginFilePath, io) {
     const entry = await findManifestEntry(pluginFilePath, size, io);
     if (entry === null) return null;
 
-    const text = await readEntryText(pluginFilePath, entry, io);
+    const text = await readEntryText(pluginFilePath, entry, size, io);
     if (text === null) return null;
 
     // הסרת BOM: עורכים בווינדוס שומרים לעיתים JSON עם U+FEFF מוביל,
@@ -112,6 +123,11 @@ async function findManifestEntry(path, fileSize, io) {
   // ל-4GB, ולכן זה מצב שלא אמור לקרות — ואם קרה, מוטב להחזיר null.
   if (centralOffset === 0xffffffff || centralSize === 0xffffffff) return null;
   if (centralSize === 0) return null;
+  // ⚠️ הגדלים והמיקומים מגיעים **מתוך הקובץ**, ולכן הם נבדקים מולו לפני
+  // שמבקשים מה-host לקרוא לפיהם. קובץ פגום שמצהיר על ספרייה מרכזית של
+  // כמעט 4GB היה גורם להקצאה בגודל הזה בצד ה-host בשביל תוסף של מאות
+  // קילובייטים.
+  if (!withinFile(centralOffset, centralSize, fileSize)) return null;
 
   const central = bytesFromBase64(
       await io.readBase64(path, centralOffset, centralSize));
@@ -144,9 +160,10 @@ async function findManifestEntry(path, fileSize, io) {
 }
 
 /** קורא ופורש רשומה בודדת. */
-async function readEntryText(path, entry, io) {
+async function readEntryText(path, entry, fileSize, io) {
   // הכותרת המקומית: 30 בתים קבועים, ואחריהם שם וה-extra באורך משתנה.
   // הגדלים נלקחים מהספרייה המרכזית ולא מכאן — כשדגל 3 דלוק הם אפס כאן.
+  if (!withinFile(entry.localOffset, 30, fileSize)) return null;
   const header = bytesFromBase64(await io.readBase64(path, entry.localOffset, 30));
   const headerView = new DataView(header.buffer, header.byteOffset,
                                   header.byteLength);
@@ -155,6 +172,9 @@ async function readEntryText(path, entry, io) {
 
   const dataOffset = entry.localOffset + 30 + nameLength + extraLength;
   if (entry.compressedSize === 0) return null;
+  // אותה בדיקה כמו על הספרייה המרכזית: `compressedSize` הוא נתון מהקובץ
+  // עצמו, ורשומה שמצהירה על יותר ממה שיש בו אינה ניתנת לקריאה.
+  if (!withinFile(dataOffset, entry.compressedSize, fileSize)) return null;
 
   const compressed = bytesFromBase64(
       await io.readBase64(path, dataOffset, entry.compressedSize));

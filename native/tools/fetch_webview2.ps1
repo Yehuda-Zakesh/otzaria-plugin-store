@@ -39,7 +39,13 @@ if ($nuget) {
     -OutputDirectory $dest -ExcludeVersion -NonInteractive | Out-Null
 } else {
   $url = "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$Version/microsoft.web.webview2.$Version.nupkg"
-  $tmp = Join-Path ([IO.Path]::GetTempPath()) "webview2-$Version.nupkg"
+  # ⚠️ הסיומת חייבת להיות `.zip`, גם שהקובץ הוא nupkg: ב-Windows
+  # PowerShell 5.1 `Expand-Archive` פוסל כל סיומת אחרת
+  # (`NotSupportedArchiveFileExtension`, ראו ValidateArchivePathHelper
+  # במודול Microsoft.PowerShell.Archive). בלי זה דווקא המסלול הזה — זה
+  # שההערה שמעל מבטיחה שהוא "עובד גם על סוכן CI נקי בלי nuget" — היה
+  # היחיד שאינו יכול לעבוד שם. nupkg הוא zip רגיל, רק השם משתנה.
+  $tmp = Join-Path ([IO.Path]::GetTempPath()) "webview2-$Version.zip"
   Write-Host "nuget.exe not found — downloading $url"
   Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
   try {

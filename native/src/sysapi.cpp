@@ -188,6 +188,41 @@ void CollectInstallDirs(HKEY hive, REGSAM access,
   }
 }
 
+// ── שורת פקודה ──────────────────────────────────────────────────────────────
+
+// עוטף ארגומנט יחיד לפי כללי הפירוק של `CommandLineToArgvW` — זה מה
+// שאוצריא (ככל אפליקציית ווינדוס) מפרקת בו את שורת הפקודה שלה.
+//
+// ⚠️ שתי המלכודות שהעטיפה הנאיבית (`"` + הערך + `"`) נופלת בהן:
+//   • ערך שמסתיים ב-`\` — `"C:\dir\"` הופך את המירכאה הסוגרת לתו
+//     רגיל, והארגומנט בולע את מה שאחריו.
+//   • ערך שמכיל `"` — הוא סוגר את המחרוזת באמצע, וכל השאר נקרא
+//     כארגומנטים נוספים.
+// הכלל: רצף ה-`\` שלפני מירכאה (כולל הסוגרת) מוכפל, ומירכאה עצמה
+// מקבלת `\` לפניה.
+std::wstring QuoteArgument(const std::wstring& value) {
+  std::wstring quoted = L"\"";
+  size_t slashes = 0;
+  for (const wchar_t c : value) {
+    if (c == L'\\') {
+      ++slashes;
+      continue;
+    }
+    if (c == L'"') {
+      quoted.append(slashes * 2 + 1, L'\\');
+      slashes = 0;
+      quoted += L'"';
+      continue;
+    }
+    quoted.append(slashes, L'\\');
+    slashes = 0;
+    quoted += c;
+  }
+  quoted.append(slashes * 2, L'\\');
+  quoted += L'"';
+  return quoted;
+}
+
 // ── תהליכים ─────────────────────────────────────────────────────────────────
 
 std::wstring ImagePathOfPid(DWORD process_id) {
@@ -232,9 +267,10 @@ Result LaunchDetached(const std::wstring& exe_path, const std::wstring& argument
     return Result::Fail(L"קובץ ההרצה של אוצריא לא נמצא:\n" + exe_path);
   }
 
-  // שורת הפקודה: ה-exe במירכאות ואחריו הארגומנט במירכאות.
-  // `CreateProcessW` כותב לתוך המאגר הזה, ולכן הוא אינו const.
-  std::wstring command = L"\"" + exe_path + L"\" \"" + argument + L"\"";
+  // שורת הפקודה: ה-exe ואחריו הארגומנט, כל אחד עטוף לפי כללי
+  // `CommandLineToArgvW` (ראו [QuoteArgument]). `CreateProcessW` כותב
+  // לתוך המאגר הזה, ולכן הוא אינו const.
+  std::wstring command = QuoteArgument(exe_path) + L" " + QuoteArgument(argument);
 
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);

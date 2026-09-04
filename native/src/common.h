@@ -54,6 +54,10 @@ std::vector<std::wstring> SplitFields(std::wstring_view message);
 // תווי בקרה מתחת ל-0x20 יוצאים כ-`\u00XX`: JSON אוסר אותם גולמיים, ו-JS
 // היה זורק `SyntaxError` על תשובה שמכילה אותם. הודעת שגיאה של מערכת
 // ההפעלה יכולה בהחלט להכיל `\r\n`.
+//
+// ⚠️ ה-escaping עובד על **בייטים** של UTF-8, אחרי המרה של המחרוזת כולה.
+// זה מה ששומר על תווים מעל ה-BMP: זוג surrogate חייב להיות מומר כזוג,
+// ולא חצי-חצי.
 std::string JsonString(std::string_view text);
 std::string JsonString(std::wstring_view text);
 

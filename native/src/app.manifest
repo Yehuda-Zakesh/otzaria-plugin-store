@@ -20,6 +20,14 @@
            ספריות שנטענות לתהליך (כולל ה-WebView2) מקבלות בכך התנהגות
            עקבית עם שמות שאינם ASCII. -->
       <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+      <!-- נתיבים ארוכים מ-260 תווים: החנות נפרסת לתיקייה שליד קובץ
+           ההרצה, ומי שמריץ אותה מתוך תיקיית הורדות מקוננת עמוק מגיע
+           לתקרה הזאת עם `Data\plugins\<מזהה>\<שם קובץ>.otzplugin` —
+           והפריסה נכשלת דווקא שם.
+           ⚠️ זו הקלה חלקית: היא פועלת רק כשמדיניות המחשב
+           `LongPathsEnabled` דלוקה. פתרון מלא דורש קידומת `\\?\` על
+           הנתיבים עצמם, וזה שינוי נפרד. -->
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
     </windowsSettings>
   </application>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">

@@ -196,6 +196,38 @@ describe('pack_overlay — החותמת', () => {
     assert.notEqual(unpack(await readFile(at('d.exe'))).digest, first);
   });
 
+  it('גבולות הקבצים נכנסים לחותמת, לא רק שרשור הבתים', async () => {
+    // ⚠️ רגרסיה: החותמת הייתה `sha256(שרשור הנתיבים ‖ שרשור התוכן)`, בלי
+    // שום דבר שמסמן איפה נגמר נתיב ואיפה נגמר קובץ. שתי המראות כאן
+    // מפיקות **בדיוק** את אותם שני שרשורים — הנתיבים נותנים "ab" והתוכן
+    // נותן "XY" — ולכן קיבלו את אותה חותמת בדיוק, למרות שהן מראות שונות.
+    //
+    // זה לא באג קוסמטי: המחלץ אצל המשתמש מכריע אם לפרוס מחדש לפי
+    // השוואת חותמות בלבד (`main.cpp`), ולכן חותמת זהה פירושה שהוא
+    // משאיר על הכונן את המראה הקודמת ולא נוגע בחדשה.
+    const one = at('מסגור-אחד');
+    await mkdir(one, {recursive: true});
+    await writeFile(join(one, 'ab'), 'XY', 'utf8');
+
+    const two = at('מסגור-שניים');
+    await mkdir(two, {recursive: true});
+    await writeFile(join(two, 'a'), 'X', 'utf8');
+    await writeFile(join(two, 'b'), 'Y', 'utf8');
+
+    await run(at('app.exe'), one, at('framing-a.exe'));
+    await run(at('app.exe'), two, at('framing-b.exe'));
+    const a = unpack(await readFile(at('framing-a.exe')));
+    const b = unpack(await readFile(at('framing-b.exe')));
+
+    // שתי המראות אכן מייצרות את אותם שרשורים — זה מה שהופך את המקרה
+    // לבדיקה אמיתית ולא למקריות.
+    assert.equal(a.files.map((f) => f.path).join(''),
+                 b.files.map((f) => f.path).join(''));
+    assert.deepEqual(Buffer.concat(a.files.map((f) => f.bytes)),
+                     Buffer.concat(b.files.map((f) => f.bytes)));
+    assert.notEqual(a.digest, b.digest);
+  });
+
   it('שם קובץ שהשתנה משנה את החותמת גם כשהתוכן זהה', async () => {
     // הנתיבים נכנסים לחותמת לפני התוכן, כי מראה שבה בילד הוחלף בבילד
     // אחר באותו גודל ותוכן-לכאורה היא עדיין מראה אחרת.
@@ -207,6 +239,28 @@ describe('pack_overlay — החותמת', () => {
     await writeFile(join(data, 'images', 'icon2.webp'), Buffer.alloc(300, 0xab));
     await run(at('app.exe'), data, at('f.exe'));
     assert.notEqual(unpack(await readFile(at('f.exe'))).digest, first);
+  });
+});
+
+describe('pack_overlay — תיקייה ריקה אינה שורדת את הפורמט', () => {
+  it('תיקייה ריקה נעלמת, ולכן `pack_mirror` מנקה אותן לפני האריזה', async () => {
+    // ⚠️ זו מגבלה **מתועדת** של הפורמט ולא תקלה: לאינדקס אין רשומת
+    // תיקייה, והמחלץ (כאן וב-overlay.cpp) יוצר רק את תיקיות ההורה של
+    // קבצים. הבדיקה קיימת כדי שהצימוד יהיה גלוי: `pack_mirror.mjs`
+    // מוחק תיקיות ריקות לפני שהוא קורא לאורז, ובלי הניקוי הזה אימות
+    // `diff -r Data verify` שב-bundle.yml נופל על `Only in Data: …`
+    // ומפיל את הג'וב היומי כולו — כלומר שום חבילה אינה מתפרסמת.
+    //
+    // מי שיוסיף רשומות תיקייה לפורמט יראה את הבדיקה הזאת נופלת, וזה
+    // הרמז שהניקוי ב-pack_mirror.mjs מיותר מאותו רגע.
+    const data = at('עם-ריקה');
+    await mkdir(join(data, 'plugins', 'com.example.ריק'), {recursive: true});
+    await writeFile(join(data, 'catalog.json'), '{}', 'utf8');
+
+    const result = await run(at('app.exe'), data, at('with-empty.exe'));
+    assert.equal(result.code, 0, result.stderr);
+    const parsed = unpack(await readFile(at('with-empty.exe')));
+    assert.deepEqual(parsed.files.map((file) => file.path), ['catalog.json']);
   });
 });
 

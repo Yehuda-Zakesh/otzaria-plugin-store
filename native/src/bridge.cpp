@@ -236,6 +236,11 @@ void Bridge::HandleMessage(const std::wstring& message) {
     RunAsync(request_id, [path] { return fsapi::DeleteFileAt(path); });
     return;
   }
+  if (command == L"fs.removeDir") {
+    const std::wstring path = Arg(fields, 0);
+    RunAsync(request_id, [path] { return fsapi::RemoveEmptyDirAt(path); });
+    return;
+  }
   if (command == L"fs.copy") {
     const std::wstring from = Arg(fields, 0);
     const std::wstring to = Arg(fields, 1);

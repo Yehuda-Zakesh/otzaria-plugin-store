@@ -162,6 +162,9 @@ function fromAbsolute(absolute) {
       year, month, absolute - absoluteFromHebrew(year, month, 1) + 1);
 }
 
+/** `YYYY-MM-DD` — יום בלי שעה, הצורה שבה האתר מפרסם תאריכי תוכן. */
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 /**
  * מפרמט מחרוזת תאריך מה-API (`YYYY-MM-DD` או ISO-8601 מלא).
  *
@@ -169,9 +172,42 @@ function fromAbsolute(absolute) {
  */
 export function formatHebrewDate(raw) {
   if (!raw) return '';
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return raw;
+  const date = parseContentDate(raw);
+  if (date === null) return raw;
   return HebrewDate.fromDate(date).toString();
+}
+
+/**
+ * ⚠️ **`YYYY-MM-DD` נבנה במפורש כתאריך מקומי, ולא דרך `new Date(raw)`.**
+ *
+ * `new Date('2026-04-02')` נקרא לפי התקן כחצות **UTC**, בעוד
+ * `HebrewDate.fromDate` קורא `getFullYear/getMonth/getDate` — כלומר לפי
+ * אזור הזמן **המקומי**. במחשב שמערבית לגריניץ' השניים נופלים על ימים
+ * שונים, והתאריך העברי הוצג יום אחד מוקדם מדי: `2026-04-02` יצא
+ * `י"ד בניסן` במקום `ט"ו בניסן`.
+ *
+ * מה שהאתר מפרסם בשדות האלה הוא **יום, לא רגע בזמן** — "התוסף עודכן ב-2
+ * באפריל" הוא אותו יום בכל מחשב שקורא את המראה, ולכן הוא נבנה כיום מקומי
+ * ולא מומר מאזור זמן כלשהו.
+ *
+ * חותמת מלאה (עם שעה) **כן** מתארת רגע בזמן, ולכן היא נשארת `new Date`
+ * ונקראת בשעון המקומי — אותם getters של `fromDate` בדיוק. כך היום המוצג
+ * הוא היום שהשעון של המשתמש מראה באותו רגע, וזה העקבי היחיד: קריאה
+ * ב-UTC הייתה מציגה תאריך אחד ושעון המערכת תאריך אחר.
+ *
+ * @returns {Date|null} `null` כשאי אפשר לפרסר
+ */
+function parseContentDate(raw) {
+  const text = String(raw).trim();
+
+  const dateOnly = DATE_ONLY.exec(text);
+  if (dateOnly !== null) {
+    return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1,
+                    Number(dateOnly[3]));
+  }
+
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /**

@@ -5,7 +5,8 @@
 //                                        <רשימת קבצים לפני> <תיקיית plugins>
 //   node native/tools/mirror_changed.mjs --inventory <תיקיית plugins>
 //
-// יוצא 0 = יש שינוי (יש לפרסם), 1 = אין שינוי, 2 = שימוש שגוי.
+// קודי היציאה — ראו [EXIT]:
+//   0 = יש שינוי (יש לפרסם) · 3 = אין שינוי · 2 = שימוש שגוי או כשל
 //
 // ── למה השוואה ולא גיבוב של ה-API ────────────────────────────────────────────
 // הפיתוי הוא לגבב את `/api/plugins` ולהשוות. זה שגוי כאן: התשובה נושאת
@@ -25,26 +26,22 @@ import {readFile, readdir, stat} from 'node:fs/promises';
 // `inventory`), וזה כאן משמש למעבר על הדיסק בלבד.
 import {join as joinHere} from 'node:path';
 
-// `--inventory <תיקיית plugins>` מדפיס את הרשימה בלבד — כך הג'וב מייצר
-// את קובץ ה"לפני" מיד אחרי פרישת החבילה הקודמת, באותו קוד שמייצר את
-// ה"אחרי". שתי רשימות שנוצרו בשני מימושים אינן ניתנות להשוואה.
-if (process.argv[2] === '--inventory') {
-  const root = process.argv[3];
-  if (!root) {
-    console.error('usage: node mirror_changed.mjs --inventory <pluginsDir>');
-    process.exit(2);
-  }
-  process.stdout.write(await inventory(root));
-  process.exit(0);
-}
-
-const [beforePath, afterPath, beforeInventoryPath, pluginsDir] =
-    process.argv.slice(2);
-if (!beforePath || !afterPath || !beforeInventoryPath || !pluginsDir) {
-  console.error('usage: node mirror_changed.mjs <catalog לפני> <catalog אחרי> ' +
-                '<רשימת קבצים לפני> <תיקיית plugins>');
-  process.exit(2);
-}
+/**
+ * [EXIT] קודי היציאה — **זרים זה לזה בכוונה**.
+ *
+ * ⚠️ "אין שינוי" הוא 3 ולא 1, ולא בשביל היופי: node יוצא ב-1 על כל
+ * חריגה שלא נתפסה, על שגיאת תחביר ועל מודול שלא נמצא. כשזה היה גם קוד
+ * "אין שינוי", כל תקלה בכלי הזה נקראה ב-workflow כ"המראה זהה" — הג'וב
+ * הצהיב ירוק, לא פרסם דבר, והחבילה נשארה תקועה על בינארי ומראה ישנים
+ * **בלי שאיש ידע**. הכיוון הזה הוא בדיוק מה שאסור לבלוע כאן.
+ *
+ * לכן גם ה-catch שעוטף את הכול: מה שאינו החלטה מפורשת יוצא ב-2, וה-
+ * workflow מפיל את הג'וב. "לא הצלחתי להכריע" אינו "אין מה לפרסם".
+ *
+ * חייב להתאים ל-`case` שב-.github/workflows/bundle.yml ולקבועים
+ * שב-native/test/mirror_changed.test.js.
+ */
+const EXIT = {publish: 0, misuse: 2, noChange: 3};
 
 /**
  * שדות שזזים בלי שהמראה השתנתה, ולכן אינם נספרים בהשוואה:
@@ -91,6 +88,12 @@ async function stableCatalog(path) {
  * הקטלוג לבדו אינו מספיק: קובץ שנמחק מהדיסק בלי שהקטלוג ישתנה (למשל
  * הורדה שנכשלה בריצה קודמת ונרשמה מהרשומה הישנה) הוא הבדל אמיתי בין
  * החבילות, והמשתמש המנותק הוא זה שמגלה אותו.
+ *
+ * ⚠️ מה שנבלע כאן הוא **רק** תיקייה שאינה קיימת: זה מצב תקין (הפרסום
+ * הראשון מייצר את הרשימה "לפני" כשעוד אין תיקייה). כל שאר התקלות —
+ * הרשאות, `stat` שנכשל על קובץ שנעלם באמצע הסריקה — עולות למעלה
+ * ומסתיימות ב-[EXIT].misuse. רשימה חלקית שנראית תקינה היא בדיוק מה
+ * שהיה מכריז "אין שינוי" על מראה שהשתנתה.
  */
 async function inventory(root) {
   const out = [];
@@ -98,8 +101,9 @@ async function inventory(root) {
     let entries;
     try {
       entries = await readdir(dir, {withFileTypes: true});
-    } catch {
-      return;
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return;
+      throw error;
     }
     for (const entry of entries) {
       const full = joinHere(dir, entry.name);
@@ -113,31 +117,67 @@ async function inventory(root) {
   return out.join('\n');
 }
 
-const before = await stableCatalog(beforePath);
-const after = await stableCatalog(afterPath);
-
-if (after === null) {
-  console.error('הקטלוג שנבנה אינו קריא — אין מה לפרסם');
-  process.exit(2);
+/**
+ * `--inventory <תיקיית plugins>` מדפיס את הרשימה בלבד — כך הג'וב מייצר
+ * את קובץ ה"לפני" מיד אחרי פרישת החבילה הקודמת, באותו קוד שמייצר את
+ * ה"אחרי". שתי רשימות שנוצרו בשני מימושים אינן ניתנות להשוואה.
+ */
+async function printInventory(root) {
+  if (!root) {
+    console.error('usage: node mirror_changed.mjs --inventory <pluginsDir>');
+    return EXIT.misuse;
+  }
+  // ⚠️ בלי `process.exit()` אחרי הכתיבה: אל צינור בווינדוס stdout הוא
+  // אסינכרוני, ויציאה מפורשת חותכת את מה שעוד לא נשטף. יציאה רגילה
+  // (`process.exitCode`) ממתינה לו.
+  process.stdout.write(await inventory(root));
+  return EXIT.publish;
 }
 
-if (before === null) {
-  console.log('אין חבילה קודמת להשוות אליה — מפרסמים');
-  process.exit(0);
+async function decide(argv) {
+  const [beforePath, afterPath, beforeInventoryPath, pluginsDir] = argv;
+  if (!beforePath || !afterPath || !beforeInventoryPath || !pluginsDir) {
+    console.error('usage: node mirror_changed.mjs <catalog לפני> <catalog אחרי> ' +
+                  '<רשימת קבצים לפני> <תיקיית plugins>');
+    return EXIT.misuse;
+  }
+
+  const before = await stableCatalog(beforePath);
+  const after = await stableCatalog(afterPath);
+
+  if (after === null) {
+    console.error('הקטלוג שנבנה אינו קריא — אין מה לפרסם');
+    return EXIT.misuse;
+  }
+
+  if (before === null) {
+    console.log('אין חבילה קודמת להשוות אליה — מפרסמים');
+    return EXIT.publish;
+  }
+
+  if (before !== after) {
+    console.log('הקטלוג השתנה — מפרסמים');
+    return EXIT.publish;
+  }
+
+  // הקטלוג זהה; נשאר לוודא שגם הקבצים עצמם זהים. הרשימה "לפני" נכתבת
+  // בג'וב מיד אחרי פרישת החבילה הקודמת ולפני הסנכרון.
+  const previous = await readFile(beforeInventoryPath, 'utf8').catch(() => null);
+  if (previous !== null && previous !== await inventory(pluginsDir)) {
+    console.log('קובצי המראה השתנו — מפרסמים');
+    return EXIT.publish;
+  }
+
+  console.log('המראה זהה לזו שפורסמה — אין מה לפרסם');
+  return EXIT.noChange;
 }
 
-if (before !== after) {
-  console.log('הקטלוג השתנה — מפרסמים');
-  process.exit(0);
+// ⚠️ ה-catch הוא חלק מהחוזה ולא רשת ביטחון קוסמטית — ראו [EXIT].
+try {
+  process.exitCode = process.argv[2] === '--inventory'
+      ? await printInventory(process.argv[3])
+      : await decide(process.argv.slice(2));
+} catch (error) {
+  console.error(`הגלאי נכשל: ${error?.stack ?? error}`);
+  process.exitCode = EXIT.misuse;
 }
-
-// הקטלוג זהה; נשאר לוודא שגם הקבצים עצמם זהים. הרשימה "לפני" נכתבת
-// בג'וב מיד אחרי פרישת החבילה הקודמת ולפני הסנכרון.
-const previous = await readFile(beforeInventoryPath, 'utf8').catch(() => null);
-if (previous !== null && previous !== await inventory(pluginsDir)) {
-  console.log('קובצי המראה השתנו — מפרסמים');
-  process.exit(0);
-}
-
-console.log('המראה זהה לזו שפורסמה — אין מה לפרסם');
-process.exit(1);

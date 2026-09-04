@@ -207,26 +207,37 @@ export function showUpdatesDialog({controller, updatable, onOpenDetail}) {
   async function install(plugin) {
     busyId = plugin.id;
     render();
-    const result = await controller.install(plugin);
-    busyId = null;
-    if (result.success) sent.add(plugin.id);
-    else showError(result.error ?? t.installFailedSnack);
-    render();
+    try {
+      const result = await controller.install(plugin);
+      if (result.success) sent.add(plugin.id);
+      else showError(result.error ?? t.installFailedSnack);
+    } catch (error) {
+      showError(error?.message ?? t.installFailedSnack);
+    } finally {
+      busyId = null;
+      render();
+    }
   }
 
   async function updateAll() {
     updatingAll = true;
     render();
-    let first = true;
-    for (const plugin of pending()) {
-      if (!first) {
-        await new Promise((r) => setTimeout(r, UPDATE_DELIVERY_SPACING_MS));
+    try {
+      let first = true;
+      for (const plugin of pending()) {
+        if (!first) {
+          await new Promise((r) => setTimeout(r, UPDATE_DELIVERY_SPACING_MS));
+        }
+        first = false;
+        await install(plugin);
       }
-      first = false;
-      await install(plugin);
+    } finally {
+      // ⚠️ ב-`finally`: `updatingAll` מנטרל **כל** כפתור בדיאלוג, ולכן
+      // מסירה שנפלה באמצע הייתה משאירה אותו כבוי לגמרי — "עדכון הכל"
+      // בטעינה נצחית, וכל שורה בלי כפתור — עד שהמשתמש סוגר ופותח אותו.
+      updatingAll = false;
+      render();
     }
-    updatingAll = false;
-    render();
   }
 
   function rowAction(plugin) {
@@ -297,6 +308,14 @@ export function showScreenshots({paths, initialIndex = 0}) {
   const hasMany = paths.length > 1;
 
   const image = h('img.lightbox__img', {alt: ''});
+  /**
+   * מוצג במקום התמונה כשהקובץ חסר.
+   *
+   * ⚠️ **הסתרה ולא החלפת הצומת.** `replaceWith` הוציא את ה-`img` מהעץ,
+   * ומאותו רגע `render` הציב `src` על צומת מנותקת — צילום אחד שנמחק
+   * מהמראה השאיר את כל הגלריה שאחריו ריקה.
+   */
+  const missing = h('div.lightbox__missing', icon('image-off', 64));
   const counter = h('div.lightbox__counter');
 
   const barrier = h('div.barrier.barrier--lightbox');
@@ -323,17 +342,23 @@ export function showScreenshots({paths, initialIndex = 0}) {
   }
 
   function render() {
-    image.src = assetUrl(paths[index]);
+    const url = assetUrl(paths[index]);
+    // נתיב ריק בקטלוג אינו נשלח כ-`src`: מחרוזת ריקה נפתרת אל הדף עצמו
+    // ומייצרת ניסיון טעינה מיותר.
+    image.hidden = url === null;
+    missing.hidden = url !== null;
+    if (url !== null) image.src = url;
     counter.textContent = `${index + 1} / ${paths.length}`;
   }
 
   image.addEventListener('error', () => {
-    image.replaceWith(h('div.lightbox__missing', icon('image-off', 64)));
+    image.hidden = true;
+    missing.hidden = false;
   });
 
   barrier.append(
       h('div.lightbox',
-        h('div.lightbox__stage', image),
+        h('div.lightbox__stage', image, missing),
         hasMany ? h('button.lightbox__nav.lightbox__nav--prev', {
           type: 'button', title: S.plugins.screenshotPrevious,
           onclick: () => step(-1),

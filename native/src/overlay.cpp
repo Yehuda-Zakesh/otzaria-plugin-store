@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
 #include <vector>
 
 #include "paths.h"
@@ -120,6 +121,24 @@ bool RemoveEmptyDir(const std::wstring& path) {
   return RemoveDirectoryW(path.c_str()) != 0;
 }
 
+// המרה **קפדנית** ל-UTF-16 של נתיב שהגיע מהאינדקס.
+//
+// ⚠️ למה לא [Utf16] המשותף: הוא נועד לנתונים שכבר עברו אימות, ולכן הוא
+// מתרגם רצף UTF-8 פגום לתו ההחלפה (U+FFFD) במקום להיכשל. כאן זה בדיוק
+// מה שאסור — בייט שנפגם בהעתקה היה הופך לנתיב אחר שנפרס בשקט תחת שם
+// שגוי. `MB_ERR_INVALID_CHARS` הופך את זה לכשל.
+bool StrictUtf16(const std::string& utf8, std::wstring& out) {
+  if (utf8.empty()) return false;
+  const int size =
+      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                          static_cast<int>(utf8.size()), nullptr, 0);
+  if (size <= 0) return false;
+  out.assign(static_cast<size_t>(size), L'\0');
+  return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                             static_cast<int>(utf8.size()), out.data(),
+                             size) == size;
+}
+
 // ממיר נתיב מהאינדקס (POSIX, יחסי ל-`Data\`) לנתיב ווינדוס יחסי.
 //
 // ⚠️ החבילה נבנית אצלנו, אבל היא מגיעה למשתמש כקובץ שהורד מהרשת — ולכן
@@ -127,10 +146,24 @@ bool RemoveEmptyDir(const std::wstring& path) {
 // או `C:\` בשדה נתיב היו הופכים את הפריסה לכתיבה חופשית לכל מקום
 // בכונן. אותו שיקול בדיוק כמו ב-`ReadDataFile` שב-main.cpp.
 bool SafeRelativePath(const std::string& utf8, std::wstring& out) {
-  const std::wstring wide = Utf16(utf8);
-  if (wide.empty()) return false;
-  // כונן (`C:`) או זרם חלופי (`file:stream`) — שניהם יוצאים מהתיקייה.
-  if (wide.find(L':') != std::wstring::npos) return false;
+  std::wstring wide;
+  if (!StrictUtf16(utf8, wide)) return false;
+
+  // תווים שאין להם מה לחפש בנתיב:
+  //   `:`       כונן (`C:`) או זרם חלופי (`file:stream`) — שניהם יוצאים
+  //             מהתיקייה.
+  //   `<>"|?*`  פסולים בשם קובץ בווינדוס; `CreateFileW` היה נכשל עליהם
+  //             ממילא, וכשל מוקדם אומר "החבילה פגומה" במקום "לא ניתן
+  //             לכתוב".
+  //   `\0`      ⚠️ הוא UTF-8 **חוקי**, ולכן `MB_ERR_INVALID_CHARS` אינו
+  //             עוצר אותו — אבל `c_str()` כן נקטע בו. שני נתיבים
+  //             שנבדלים רק אחריו היו נכתבים לאותו קובץ, הפריסה הייתה
+  //             "מצליחה", והחותמת הייתה ננעלת על מראה חסרת קובץ שלא
+  //             תיפרס שוב לעולם. כאן נופלים גם שאר תווי הבקרה.
+  for (const wchar_t c : wide) {
+    if (c < 0x20) return false;
+    if (wcschr(L"<>:\"|?*", c) != nullptr) return false;
+  }
 
   out.clear();
   size_t start = 0;
@@ -141,6 +174,17 @@ bool SafeRelativePath(const std::string& utf8, std::wstring& out) {
     // מקטע ריק תופס גם נתיב מוחלט (`\foo`) וגם `//`; `.` ו-`..` הם
     // היציאה מהתיקייה עצמה.
     if (segment.empty() || segment == L"." || segment == L"..") return false;
+    // ⚠️ **`..` שהתחפש.** ווינדוס גוזמת נקודות ורווחים מסוף מקטע,
+    // ולכן `.. `, `...` ו-`. .` מגיעים למערכת הקבצים כ-`..` — כלומר
+    // בדיוק היציאה מהתיקייה שנפסלה בשורה שמעל, אחרי שהשוואת המחרוזות
+    // שם לא זיהתה אותם. הפסילה כאן היא של כל מקטע שנגמר בנקודה או
+    // ברווח, וזה **מכיל** את כל המשפחה הזאת: מקטע שכולו נקודות ורווחים
+    // נגמר בהכרח באחד מהם.
+    //
+    // אותה שורה סוגרת גם התנגשות שקטה: `a.` נוצר על הדיסק כ-`a`, ושתי
+    // רשומות כאלה היו נכתבות לאותו קובץ בלי שאיש ידע. שם אמיתי במראה
+    // אינו יכול להסתיים כך ממילא — מערכת הקבצים אינה מרשה ליצור אותו.
+    if (segment.back() == L'.' || segment.back() == L' ') return false;
     if (!out.empty()) out += L'\\';
     out += segment;
     if (slash == std::wstring::npos) break;
@@ -293,6 +337,15 @@ bool ExtractOverlay(const std::wstring& exe_path, const OverlayInfo& info,
   }
   const uint32_t count = LoadU32(index.data());
   at += sizeof(uint32_t);
+  // ⚠️ גם המספר הזה מגיע מהקובץ, ו-`reserve` הוא הקצאה **לפני** שנקראה
+  // ולו רשומה אחת. כל רשומה תופסת לפחות 12 בייט, ולכן אינדקס באורך
+  // ידוע חוסם את מספר הרשומות שיכולות להיות בו. בלי החסם הזה `count`
+  // פגום (‎4 מיליארד) היה מבקש עשרות GB, נופל ב-`bad_alloc` — ומפיל את
+  // התהליך בלי הודעה, במקום להגיד למשתמש שהחבילה פגומה.
+  if (count > (index.size() - at) / 12) {
+    error = L"האינדקס של החבילה קטוע.";
+    return false;
+  }
   entries.reserve(count);
 
   uint64_t declared = 0;
@@ -317,13 +370,23 @@ bool ExtractOverlay(const std::wstring& exe_path, const OverlayInfo& info,
       error = L"החבילה מכילה נתיב שאינו חוקי — יש להוריד אותה מחדש.";
       return false;
     }
+    // ⚠️ חיסור ולא חיבור: `declared += file_bytes` נבדק רק בסוף, ושני
+    // גדלים סביב ‎2^63 יכולים לגלוש ולהחזיר סכום שמסתדר עם המטען —
+    // כלומר לעבור את הבדיקה שאחרי הלולאה עם רשומה שגודלה חצי מרחב
+    // הכתובות. בצורה הזאת האינווריאנטה `declared <= payload_size`
+    // נשמרת בכל צעד, ואין גלישה אפשרית.
+    if (file_bytes > info.payload_size - declared) {
+      error = L"החבילה אינה עקבית (סכום הקבצים אינו תואם לגודל המטען).";
+      return false;
+    }
     entry.size = file_bytes;
     declared += file_bytes;
     entries.push_back(std::move(entry));
   }
 
-  // סכום הגדלים חייב לכסות **בדיוק** את אזור התוכן. אינדקס שאינו
-  // מסתדר עם ה-footer פירושו חבילה פגומה, ולא "נפרוס מה שיש".
+  // סכום הגדלים חייב לכסות **בדיוק** את אזור התוכן. הלולאה כבר פסלה
+  // סכום גדול מדי, וכאן נופל אינדקס שמכסה פחות מהמטען — גם הוא חבילה
+  // פגומה, ולא "נפרוס מה שיש".
   if (declared != info.payload_size) {
     error = L"החבילה אינה עקבית (סכום הקבצים אינו תואם לגודל המטען).";
     return false;
@@ -392,6 +455,41 @@ bool ExtractOverlay(const std::wstring& exe_path, const OverlayInfo& info,
 
 // ── העותק הרזה ───────────────────────────────────────────────────────────────
 
+// האם העותק הרזה שכבר יושב ב-[dest] זהה לזה שהיינו כותבים מהחבילה.
+//
+// ⚠️ השוואת **בייטים** ולא רק גודל: שני בינאריים שונים יכולים בקלות
+// לצאת באותו אורך, והסתמכות על הגודל לבדו הייתה משאירה את המשתמש עם
+// exe ישן בלי שאיש ידע. `source` נפתח כבר על ידי הקורא ולכן מועבר
+// כ-handle; ההשוואה מזיזה את המצביע שלו, והקורא היחיד קורא לה רק
+// במסלול שבו הוא חוזר מיד ואינו קורא ממנו יותר.
+static bool SlimCopyMatches(HANDLE source, uint64_t data_offset,
+                            const std::wstring& dest) {
+  // ⚠️ שיתוף מלא, ובכלל זה `FILE_SHARE_DELETE`: הקובץ שאנחנו בודקים
+  // הוא קובץ הרצה של תהליך שרץ עכשיו, ובלי זה הפתיחה עצמה תיכשל.
+  ScopedHandle existing(CreateFileW(
+      dest.c_str(), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
+  if (!existing.valid()) return false;
+
+  LARGE_INTEGER size{};
+  if (!GetFileSizeEx(existing.get(), &size)) return false;
+  if (static_cast<uint64_t>(size.QuadPart) != data_offset) return false;
+
+  std::vector<uint8_t> mine(kCopyChunk);
+  std::vector<uint8_t> theirs(kCopyChunk);
+  uint64_t at = 0;
+  while (at < data_offset) {
+    const uint64_t left = data_offset - at;
+    const size_t want = static_cast<size_t>(left < kCopyChunk ? left : kCopyChunk);
+    if (!ReadAt(source, at, mine.data(), want)) return false;
+    if (!ReadAt(existing.get(), at, theirs.data(), want)) return false;
+    if (memcmp(mine.data(), theirs.data(), want) != 0) return false;
+    at += want;
+  }
+  return true;
+}
+
 bool WriteSlimCopy(const std::wstring& exe_path, uint64_t data_offset,
                    const std::wstring& dest, std::wstring& error) {
   ScopedHandle source(CreateFileW(exe_path.c_str(), GENERIC_READ,
@@ -405,8 +503,19 @@ bool WriteSlimCopy(const std::wstring& exe_path, uint64_t data_offset,
   ScopedHandle target(CreateFileW(dest.c_str(), GENERIC_WRITE, 0, nullptr,
                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
   if (!target.valid()) {
+    const DWORD open_error = GetLastError();
+    // ⚠️ המקרה השכיח כאן הוא **שהחנות פתוחה עכשיו**: הטוען של ווינדוס
+    // מחזיק את קובץ ההרצה של תהליך רץ בלי לשתף כתיבה, ולכן שום share
+    // mode שלנו לא יקבל אותה. אבל בשלב הזה המראה כבר נפרסה בהצלחה —
+    // וכשמה שיושב שם הוא בדיוק העותק שהיינו כותבים, אין שום דבר לעשות
+    // וגם אין על מה להיכשל. כשל כאן היה מודיע למשתמש שההתקנה נכשלה
+    // בדיוק כשהיא הצליחה.
+    if (open_error == ERROR_SHARING_VIOLATION &&
+        SlimCopyMatches(source.get(), data_offset, dest)) {
+      return true;
+    }
     error = L"כתיבת קובץ ההרצה נכשלה:\n" + dest + L"\n" +
-            MessageForError(GetLastError());
+            MessageForError(open_error);
     return false;
   }
 
@@ -464,6 +573,15 @@ bool RemoveTree(const std::wstring& path) {
   const DWORD attributes = GetFileAttributesW(path.c_str());
   if (attributes == INVALID_FILE_ATTRIBUTES) return true;  // כבר אינה שם
   if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) return DeleteOne(path);
+
+  // ⚠️ אותה הגנה שמופעלת בהמשך על הילדים, אבל על **השורש** עצמו — וזה
+  // המקרה המסוכן באמת: הקורא היחיד כאן מוחק את `Data\plugins`, ומי
+  // שמריץ מכונן קטן מפנה אותה לא פעם ל-junction על כונן אחר. כניסה
+  // פנימה הייתה מוחקת את מה שיושב בצד השני של הקישור, מחוץ ל-`Data\`
+  // לגמרי. מוחקים את הקישור ולא את מה שהוא מצביע אליו.
+  if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return RemoveEmptyDir(path);
+  }
 
   bool ok = true;
   WIN32_FIND_DATAW found{};

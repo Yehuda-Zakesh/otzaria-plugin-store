@@ -46,6 +46,14 @@ Result MakeDirs(const std::wstring& path);
 // מחיקת קובץ. קובץ שאינו קיים היא הצלחה: המצב המבוקש הושג.
 Result DeleteFileAt(const std::wstring& path);
 
+// מחיקת תיקייה **ריקה בלבד**. תיקייה שאינה קיימת היא הצלחה, כמו
+// ב-[DeleteFileAt]. ⚠️ `RemoveDirectoryW` מסרבת מעצמה לתיקייה שיש בה
+// תוכן, וזו בדיוק הסיבה שהיא נבחרה: הקורא (`pruneUnusedFiles`) מוחק
+// שארית ריקה אחרי גריעת בילדים, ומחיקה רקורסיבית שם הייתה יכולה לקחת
+// איתה תמונה או בילד שהקטלוג עדיין מחזיק. הסירוב הוא רשת הביטחון
+// השנייה, אחרי הבדיקה שב-JS.
+Result RemoveEmptyDirAt(const std::wstring& path);
+
 Result CopyFileTo(const std::wstring& from, const std::wstring& to);
 
 // העברה/שינוי שם, עם דריסת היעד. זה מה שהופך הורדה לקובץ סופי: ה-JS

@@ -87,9 +87,21 @@ export function resolveAssetNaming(headers, preferredExt = '') {
 /**
  * הופך כתובת יחסית למוחלטת מול [baseUrl]. כתובת שכבר מוחלטת חוזרת כמו
  * שהיא, וכתובת ריקה נשארת ריקה.
+ *
+ * ⚠️ **שתי צורות שהשרשור הנאיבי שבר:**
+ *
+ *   • `//cdn.example/x.png` — כתובת חסרת סכימה (כך מגיעות כתובות CDN
+ *     מכמה מערכות תוכן). `${baseUrl}${url}` הפיק
+ *     `https://otzaria.org//cdn.example/x.png`, שהוא נתיב באתר ולא הכתובת
+ *     שהתכוונו אליה.
+ *   • `uploads/x.png` — כתובת יחסית **בלי** לוכסן מוביל. בלי הלוכסן כאן
+ *     נוצר `https://otzaria.orguploads/x.png`, כלומר שם מארח אחר לגמרי.
  */
 export function absoluteUrl(url, baseUrl) {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  return `${baseUrl}${url}`;
+  if (url.startsWith('//')) return `https:${url}`;
+  // בסיס ריק = הכתובת כבר מוחלטת בקטלוג השמור; אין מה להשלים.
+  if (!baseUrl) return url;
+  return url.startsWith('/') ? `${baseUrl}${url}` : `${baseUrl}/${url}`;
 }

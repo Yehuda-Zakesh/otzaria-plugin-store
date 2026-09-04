@@ -16,20 +16,47 @@ struct WebBundleHeader {
 };
 #pragma pack(pop)
 
+// תקרה לגוש הפרוש. הממשק הוא HTML/CSS/JS ותמונות — מגה-בייטים בודדים,
+// ו-256MB הם כבר סדר גודל שאין ממנו דרך חזרה. כותרת שמצהירה על יותר
+// אינה חבילה גדולה אלא חבילה פגומה, ובלי התקרה `resize` היה זורק חריג
+// במקום להחזיר `false` (ראו [WebBundle::LoadFromResource]).
+constexpr uint64_t kMaxRawSize = 256ULL * 1024 * 1024;
+
+// סוגר את המפענח בכל יציאה, כולל יציאה בחריג מהקצאת החוצץ.
+class ScopedDecompressor {
+ public:
+  ScopedDecompressor() = default;
+  ScopedDecompressor(const ScopedDecompressor&) = delete;
+  ScopedDecompressor& operator=(const ScopedDecompressor&) = delete;
+  ~ScopedDecompressor() {
+    if (handle != nullptr) CloseDecompressor(handle);
+  }
+
+  DECOMPRESSOR_HANDLE handle = nullptr;
+};
+
 // פורש את הגוש הדחוס דרך Compression API של ווינדוס — אותו מסלול בדיוק
 // שהוכיח את עצמו ב-`windows_stub/stub.c`, ומאותה סיבה: בלי תהליך חיצוני,
 // בלי קובץ זמני, ובלי שאף נתיב יעבור המרת קידוד.
 bool Decompress(const uint8_t* compressed, size_t compressed_size,
                 uint32_t algorithm, uint64_t raw_size,
                 std::vector<uint8_t>& out) {
-  DECOMPRESSOR_HANDLE decompressor = nullptr;
-  if (!CreateDecompressor(algorithm, nullptr, &decompressor)) return false;
+  // ⚠️ הגודל מגיע מהכותרת, כלומר מקובץ ההרצה שיכול להיות קטוע או פגום.
+  // הוא נבדק **לפני** ההקצאה: חריג מ-`resize` היה מפיל את התהליך, בעוד
+  // שכל החוזה כאן הוא `false` שמאפשר להציג את הודעת ההורדה-מחדש.
+  if (raw_size == 0 || raw_size > kMaxRawSize) return false;
+  // ב-32 סיביות `size_t` צר מ-`uint64_t`, ובלי הבדיקה הזאת ההמרה למטה
+  // הייתה קוטמת והחוצץ היה קטן מהמוצהר.
+  if (raw_size > static_cast<uint64_t>(SIZE_MAX)) return false;
+
+  ScopedDecompressor decompressor;
+  if (!CreateDecompressor(algorithm, nullptr, &decompressor.handle)) return false;
 
   out.resize(static_cast<size_t>(raw_size));
   SIZE_T produced = 0;
-  const BOOL ok = ::Decompress(decompressor, const_cast<uint8_t*>(compressed),
-                               compressed_size, out.data(), out.size(), &produced);
-  CloseDecompressor(decompressor);
+  const BOOL ok = ::Decompress(decompressor.handle,
+                               const_cast<uint8_t*>(compressed), compressed_size,
+                               out.data(), out.size(), &produced);
 
   // גודל שאינו מה שהכותרת הצהירה פירושו חבילה פגומה, ולא "פרשנו חלק".
   return ok && produced == raw_size;
@@ -97,6 +124,15 @@ bool WebBundle::LoadFromResource(HMODULE module, int resource_id) {
     std::string path;
     uint32_t size;
   };
+
+  // ⚠️ גם המונה מגיע מהגוש עצמו, וההשוואה ל-`header.file_count` למעלה
+  // אינה מגבילה אותו — שני הערכים באים מאותה חבילה פגומה. כל רשומה
+  // בטבלה תופסת לכל הפחות שני שדות של 4 בייט, ולכן מונה שגדול ממה
+  // שנשאר בגוש הוא בהכרח שקר. בלי הבדיקה הזאת `reserve` על מונה מנופח
+  // היה זורק חריג במקום שהטעינה תחזיר `false`.
+  constexpr size_t kMinEntryBytes = sizeof(uint32_t) * 2;
+  if (count > (raw.size() - cursor.offset()) / kMinEntryBytes) return false;
+
   std::vector<Entry> entries;
   entries.reserve(count);
 

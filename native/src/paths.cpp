@@ -2,6 +2,8 @@
 
 #include <shlobj.h>
 
+#include <vector>
+
 #include "common.h"
 
 namespace otz {
@@ -91,15 +93,42 @@ bool CreateDirectories(const std::wstring& path) {
     return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
   }
 
-  // ההורה קודם. `CreateDirectoryW` אינו יוצר שרשרת, ו-`SHCreateDirectoryEx`
-  // אינו מקבל נתיבים יחסיים — כאן הנתיבים תמיד מוחלטים, אבל הרקורסיה
-  // הזאת עולה שורה אחת וחוסכת את התלות ב-shell.
-  const size_t slash = path.find_last_of(L"\\/");
-  if (slash != std::wstring::npos && slash > 0) {
+  // ההורים קודם. `CreateDirectoryW` אינו יוצר שרשרת, ו-`SHCreateDirectoryEx`
+  // אינו מקבל נתיבים יחסיים — כאן הנתיבים תמיד מוחלטים, אבל הלולאה
+  // הזאת עולה כמה שורות וחוסכת את התלות ב-shell.
+  //
+  // ⚠️ לולאה ולא רקורסיה, אף שהרקורסיה הייתה קצרה יותר: חלק מהנתיבים
+  // כאן נבנים מהאינדקס של החבילה (ראו `SafeRelativePath` ב-overlay.cpp),
+  // ושם מספר המקטעים אינו מוגבל בשום דבר. נתיב עם עשרות אלפי מקטעים
+  // היה מפוצץ את המחסנית — קריסה בלי הודעה — במקום להיכשל על נתיב ארוך
+  // מדי.
+  //
+  // הכיוון הוא מהעמוק לרדוד ואז חזרה: עוצרים על ההורה הקיים הראשון
+  // ויוצרים ממנו ולמטה, בדיוק כמו שהרקורסיה עשתה. כך נתיב UNC
+  // (`\\server\share\...`) אינו גורר ניסיון ליצור את `\\server` עצמו.
+  std::vector<size_t> missing;
+  for (size_t slash = path.find_last_of(L"\\/");
+       slash != std::wstring::npos && slash > 0;
+       slash = path.find_last_of(L"\\/", slash - 1)) {
     const std::wstring parent = path.substr(0, slash);
     // `C:` לבדו אינו תיקייה שניתן ליצור — עוצרים על שורש הכונן.
-    const bool is_drive_root = parent.size() == 2 && parent[1] == L':';
-    if (!is_drive_root && !CreateDirectories(parent)) return false;
+    if (parent.size() == 2 && parent[1] == L':') break;
+
+    const DWORD parent_attributes = GetFileAttributesW(parent.c_str());
+    if (parent_attributes != INVALID_FILE_ATTRIBUTES) {
+      // קובץ במקום שבו צריכה לשבת תיקייה — אין דרך להמשיך מכאן.
+      if ((parent_attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) return false;
+      break;  // ההורה הקיים הראשון — מכאן ולמטה יוצרים
+    }
+    missing.push_back(slash);
+  }
+
+  for (auto it = missing.rbegin(); it != missing.rend(); ++it) {
+    const std::wstring parent = path.substr(0, *it);
+    if (!CreateDirectoryW(parent.c_str(), nullptr) &&
+        GetLastError() != ERROR_ALREADY_EXISTS) {
+      return false;
+    }
   }
 
   if (CreateDirectoryW(path.c_str(), nullptr)) return true;

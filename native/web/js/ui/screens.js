@@ -65,15 +65,58 @@ const local = {
   allFeaturedShown: false,
   allTagsShown: false,
   busyPluginId: null,
+  /** מה שהוקלד בתיבת החיפוש של דף הבית וטרם נשלח (ראו `hero`). */
+  heroQuery: '',
 };
+
+/**
+ * שומר את המיקוד ואת מיקום הסמן לפני שהמסך מוחלף.
+ *
+ * ⚠️ **בלי זה תיבת החיפוש איבדה את המיקוד אחרי כל תו.** ההקלדה מודיעה
+ * לבקר, הבקר מרנדר, והרינדור הוא מלא — `replace` מוחק את השדה שהמשתמש
+ * מקליד בו ובונה אותו מחדש, והמיקוד נופל ל-`body`. התו השני כבר לא הגיע
+ * לשום מקום.
+ *
+ * הזיהוי הוא `data-focus-key` ולא מיקום בעץ: הפקדים שצריכים לשרוד
+ * רינדור הם בודדים, והמפתח נושא איתו גם את הכוונה.
+ */
+function captureFocus(host) {
+  const active = document.activeElement;
+  if (active === null || !host.contains(active)) return null;
+  const key = active.dataset?.focusKey;
+  if (!key) return null;
+  // `selectionStart` קיים בשדות טקסט בלבד: ב-`select` הוא `undefined`,
+  // ובשדות מסוימים (`number`, `email`) הגישה אליו **זורקת**. פקד בלי
+  // בורר טקסט מקבל את המיקוד בלבד.
+  try {
+    return {key, start: active.selectionStart, end: active.selectionEnd};
+  } catch {
+    return {key, start: null, end: null};
+  }
+}
+
+/** משחזר את מה ש-[captureFocus] שמר, אל המסך שזה עתה נבנה. */
+function restoreFocus(host, snapshot) {
+  if (snapshot === null) return;
+  const element = host.querySelector(
+      `[data-focus-key="${snapshot.key}"]`);
+  if (element === null) return;
+  // `preventScroll`: המיקוד לא יזיז את הגלילה שהקורא (`main.js`) משחזר
+  // מיד אחרי הרינדור.
+  element.focus({preventScroll: true});
+  if (snapshot.start === null || snapshot.start === undefined) return;
+  element.setSelectionRange(snapshot.start, snapshot.end);
+}
 
 /**
  * מרנדר את מסך החנות כולו לתוך [host].
  *
  * הרינדור הוא מלא ולא מדורג: הבקר הוא מקור האמת היחיד, והמסך הוא כמה
- * עשרות אלמנטים. זה מה שמאפשר לוותר על framework.
+ * עשרות אלמנטים. זה מה שמאפשר לוותר על framework. המחיר היחיד שהוא גובה
+ * הוא המיקוד, וזה מה ש-[captureFocus] מחזיר.
  */
 export function renderStore(host, controller, {readOnly = false} = {}) {
+  const focus = captureFocus(host);
   const hasNav = controller.categories.length > 0;
   const wide = host.clientWidth >= 1080;
   const showSidebar = hasNav && wide;
@@ -133,6 +176,7 @@ export function renderStore(host, controller, {readOnly = false} = {}) {
   }
 
   replace(host, layout);
+  restoreFocus(host, focus);
   if (controller.status === Status.syncing) {
     host.append(syncOverlay(controller));
   }
@@ -215,6 +259,10 @@ async function runSync(controller) {
     return;
   }
   if (outcome === null) return;
+  // ביטול מחזיר תוצאה רגילה (מה שהספיק לרדת נשמר), ולכן בלי הבדיקה הזאת
+  // המשתמש שלחץ "ביטול" קיבל "הסנכרון הושלם". אין כאן הודעה משלו:
+  // היעלמות השכבה היא התשובה ללחיצה, והמצב שנשאר הוא מה שכבר במראה.
+  if (controller.syncCancelled) return;
   if (controller.syncWarnings.length > 0) {
     showSnack(S.plugins.syncDoneWithWarningsSnack(
         controller.syncWarnings.length), 'error');
@@ -255,7 +303,10 @@ function sidebar(controller) {
       controller.categories.map((category) => item({
         label: category.name,
         tooltip: category.description,
-        count: category.pluginCount,
+        // ⚠️ **מה שיוצג בפועל, ולא `pluginCount`.** המספר שהאתר שמר
+        // מונה גם תוסף שאינו רץ כאן וגם כזה שמתג "רק מה שלא מותקן"
+        // מסתיר — ומספר שאינו תואם לרשימה שמתחתיו הוא מספר שקרי.
+        count: controller.pluginsIn(category).length,
         iconName: 'puzzle-piece',
         active: controller.openCategorySlug === category.slug,
         onTap: () => controller.showCategory(category.slug),
@@ -282,7 +333,8 @@ function categoryBar(controller) {
         onTap: () => controller.showHome(),
       }),
       controller.categories.map((category) => tagPill({
-        label: `${category.name} (${category.pluginCount})`,
+        // אותו מספר שבסרגל הצד — מה שיוצג בפועל.
+        label: `${category.name} (${controller.pluginsIn(category).length})`,
         active: controller.openCategorySlug === category.slug,
         onTap: () => controller.showCategory(category.slug),
       })),
@@ -345,7 +397,8 @@ function homeSections(controller) {
       title: category.name,
       description: category.description,
       action: actionButton({
-        text: t.categoryLinkButton(category.pluginCount),
+        // אותו מספר שדף הקטגוריה עצמו יציג.
+        text: t.categoryLinkButton(controller.pluginsIn(category).length),
         variant: 'ghost',
         iconName: 'arrow-left',
         onPressed: () => controller.showCategory(category.slug),
@@ -372,8 +425,16 @@ function hero(controller) {
     type: 'search',
     placeholder: t.heroSearchHint,
     'aria-label': t.filterSearchLabel,
+    // המלל אינו בבקר עד ה-Enter, ולכן הוא נשמר כאן: רינדור שמגיע באמצע
+    // ההקלדה (סריקת התקנה, שינוי גודל) בונה את השדה מחדש, ובלי זה מה
+    // שהוקלד היה נמחק. המיקוד עצמו משוחזר לפי `data-focus-key`.
+    value: local.heroQuery,
+    dataset: {focusKey: 'hero-search'},
   });
   const submit = () => controller.showAllPlugins(input.value);
+  input.addEventListener('input', () => {
+    local.heroQuery = input.value;
+  });
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') submit();
   });
@@ -461,6 +522,9 @@ function filtersBar(controller) {
     type: 'search',
     value: controller.search,
     placeholder: t.filterSearchHint,
+    // כל תו מרנדר את המסך מחדש — המיקוד והסמן משוחזרים לפי המפתח הזה
+    // (ראו `captureFocus`), אחרת ההקלדה נעצרת אחרי התו הראשון.
+    dataset: {focusKey: 'filters-search'},
   });
   // `input` ולא `change`: הסינון מקומי ומיד, כמו במקור.
   search.addEventListener('input', () => controller.setSearch(search.value));
@@ -473,6 +537,7 @@ function filtersBar(controller) {
   };
   const select = h('select.select', {
     onchange: (event) => controller.setStatusFilter(event.target.value),
+    dataset: {focusKey: 'filters-status'},
   }, Object.entries(statusLabels).map(([value, label]) => h('option', {
     value, text: label, selected: controller.statusFilter === value,
   })));
@@ -528,23 +593,34 @@ function categorySections(controller) {
   const sections = [h('div.store__pad.store__pad--section', sectionHeader({
     eyebrowText: t.categoriesTitle,
     title: category.name,
+    // המספר הוא של מה שמוצג, לא של מה שהאתר שיבץ: "6 תוספים בקטגוריה"
+    // מעל רשימה ריקה (המתג הסתיר את כולם) הוא בדיוק מה שאין לו הסבר.
     description: category.description ||
-        (category.pluginCount === 1 ? t.categoryOnePlugin
-                                    : t.categoryPluginCount(
-                                          category.pluginCount)),
+        (plugins.length === 1 ? t.categoryOnePlugin
+                              : t.categoryPluginCount(plugins.length)),
   }))];
 
   if (plugins.length === 0) {
-    sections.push(h('div.store__pad', emptyState({
-      title: t.emptyCategoryTitle,
-      body: t.emptyCategoryBody,
-      action: actionButton({
-        text: t.allPluginsButton,
-        variant: 'neutral',
-        iconName: 'apps-list',
-        onPressed: () => controller.showAllPlugins(),
-      }),
-    })));
+    // הקטגוריה אינה בהכרח ריקה — ייתכן שהמתג "רק מה שלא מותקן" הסתיר
+    // את כולה, ואז ההסבר הנכון הוא אחר לגמרי (כמו ב-`noResultsState`).
+    const hiddenByToggle = controller.hideInstalled &&
+        category.pluginIds.some((id) => {
+          const plugin = controller.byId(id);
+          return plugin !== null &&
+              controller.statusOf(plugin) === InstallStatus.upToDate;
+        });
+    sections.push(h('div.store__pad', hiddenByToggle
+        ? allInstalledState(controller)
+        : emptyState({
+            title: t.emptyCategoryTitle,
+            body: t.emptyCategoryBody,
+            action: actionButton({
+              text: t.allPluginsButton,
+              variant: 'neutral',
+              iconName: 'apps-list',
+              onPressed: () => controller.showAllPlugins(),
+            }),
+          })));
   } else {
     sections.push(h('div.store__pad', grid(controller, plugins)));
   }
@@ -649,6 +725,7 @@ function storeCard(controller, plugin) {
   const busy = local.busyPluginId === plugin.id;
   const supportsInstall = target?.supportsDirectInstall ??
       plugin.supportsDirectInstall;
+  const updated = updatedOn(plugin);
 
   const thumb = h('div.card__media',
       thumbnail({relativePath: plugin.imagePath}),
@@ -709,12 +786,20 @@ function storeCard(controller, plugin) {
       h('hr.plugin-card__rule'),
       h('div.plugin-card__footer',
         h('span.plugin-card__link', {text: t.cardDetailsLink}),
-        h('span.plugin-card__date', {
-          text: t.cardUpdatedOn(formatHebrewDate(
-              plugin.originalDate || plugin.updatedAt)),
+        // בלי תאריך אין שורה: "עודכן ב־" ואחריו כלום גרוע מלא לומר דבר.
+        updated === null ? null : h('span.plugin-card__date', {
+          text: t.cardUpdatedOn(updated),
         })),
     ],
   });
+}
+
+/**
+ * תאריך העדכון של התוסף בגימטריה, או `null` כשהקטלוג לא נשא תאריך
+ * (שני השדות הם מחרוזות, וברירת המחדל שלהן ריקה).
+ */
+function updatedOn(plugin) {
+  return formatHebrewDate(plugin.originalDate || plugin.updatedAt) || null;
 }
 
 // ── דף פרטי התוסף ────────────────────────────────────────────────────────────
@@ -825,7 +910,7 @@ function heroPanel(controller, plugin) {
             text: t.sourcePageButton,
             variant: 'ghost',
             iconName: 'open',
-            onPressed: () => void controller.openHomepage(plugin.homepage),
+            onPressed: () => void openHomepage(controller, plugin),
           }))),
     ],
   });
@@ -844,8 +929,9 @@ function infoPanel(controller, plugin) {
      value: pluginStatusLabel(target?.status ?? plugin.status)},
     {label: t.infoAuthor,
      value: plugin.author || t.valueUnspecifiedMasculine},
+    // כמו כל תא אחר כאן: חוסר נאמר במפורש ולא נשאר תא ריק.
     {label: t.infoUpdated,
-     value: formatHebrewDate(plugin.originalDate || plugin.updatedAt)},
+     value: updatedOn(plugin) ?? t.valueUnspecifiedMasculine},
     {label: t.infoNetwork,
      value: (target?.requiresNetwork ?? plugin.requiresNetwork)
          ? t.infoNetworkRequired : t.infoNetworkNotRequired},
@@ -930,37 +1016,74 @@ function ratingSummary(plugin) {
 
 // ── פעולות ───────────────────────────────────────────────────────────────────
 
+// ⚠️ **שתי הפעולות האלה חייבות `finally`.** הן מדליקות ספינר על הכפתור
+// (`local.busyPluginId`) וממתינות לגשר. כישלון שאינו מוחזר כערך אלא
+// נזרק — חלון שמירה שלא נפתח, תשובה שלא חזרה מה-host — היה יוצא מכאן
+// דרך `void`, בלי הודעה, ומשאיר את הספינר דולק עד סוף ההרצה.
+
 async function saveCopy(controller, plugin) {
-  const destPath = await controller.manager.sys.saveDialog(
-      controller.suggestedFileName(plugin));
+  let destPath;
+  try {
+    destPath = await controller.manager.sys.saveDialog(
+        controller.suggestedFileName(plugin));
+  } catch (error) {
+    // מערכת ההפעלה כבר מנסחת את הסיבה ("לא נבחר מקום לשמירה"), ולכן
+    // היא מוצגת כמו שהיא.
+    showError(error?.message ?? S.plugins.saveFailedSnack);
+    return;
+  }
   // ביטול אינו שגיאה.
   if (destPath === null) return;
 
   local.busyPluginId = plugin.id;
   controller.notifyRerender();
-  const result = await controller.saveCopy(plugin, destPath);
-  local.busyPluginId = null;
-  controller.notifyRerender();
-
-  if (result.success) showSuccess(S.plugins.saveDoneSnack);
-  else showError(result.error ?? S.plugins.saveFailedSnack);
+  try {
+    const result = await controller.saveCopy(plugin, destPath);
+    if (result.success) showSuccess(S.plugins.saveDoneSnack);
+    else showError(result.error ?? S.plugins.saveFailedSnack);
+  } catch (error) {
+    showError(error?.message ?? S.plugins.saveFailedSnack);
+  } finally {
+    local.busyPluginId = null;
+    controller.notifyRerender();
+  }
 }
 
 async function install(controller, plugin) {
   local.busyPluginId = plugin.id;
   controller.notifyRerender();
-  const result = await controller.install(plugin);
-  local.busyPluginId = null;
-  controller.notifyRerender();
+  try {
+    const result = await controller.install(plugin);
+    // ההצלחה כאן היא של ה**מסירה** בלבד — ההתקנה נגמרת בחלון של אוצריא,
+    // וההודעה על סיומה מגיעה מהסריקה שרצה ברקע.
+    if (result.success) showSnack(S.plugins.installOpenedSnack(plugin.name));
+    else showError(result.error ?? S.plugins.installFailedSnack);
+  } catch (error) {
+    showError(error?.message ?? S.plugins.installFailedSnack);
+  } finally {
+    local.busyPluginId = null;
+    controller.notifyRerender();
+  }
+}
 
-  // ההצלחה כאן היא של ה**מסירה** בלבד — ההתקנה נגמרת בחלון של אוצריא,
-  // וההודעה על סיומה מגיעה מהסריקה שרצה ברקע.
-  if (result.success) showSnack(S.plugins.installOpenedSnack(plugin.name));
-  else showError(result.error ?? S.plugins.installFailedSnack);
+/**
+ * פותח את עמוד המקור בדפדפן.
+ *
+ * התוצאה נבדקת: `openExternalUrl` מחזירה כישלון כערך, ובלי לקרוא אותו
+ * לחיצה שלא פתחה כלום נראתה כמו כפתור מקולקל.
+ */
+async function openHomepage(controller, plugin) {
+  try {
+    const result = await controller.openHomepage(plugin.homepage);
+    if (!result.success) showError(result.error ?? S.common.error);
+  } catch (error) {
+    showError(error?.message ?? S.common.error);
+  }
 }
 
 /** מאפס את מצב התצוגה המקומי — נקרא בניווט. */
 export function resetLocalViewState() {
   local.allFeaturedShown = false;
   local.allTagsShown = false;
+  local.heroQuery = '';
 }

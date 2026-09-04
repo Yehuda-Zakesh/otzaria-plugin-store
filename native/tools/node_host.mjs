@@ -14,7 +14,7 @@
 // שנבדקו אחד-אחד מול המקור מסומנים ב-"כמו ב-host" מתחת.
 
 import {createWriteStream} from 'node:fs';
-import {mkdir, readFile, writeFile, rename, copyFile, stat, readdir, rm,
+import {mkdir, readFile, writeFile, rename, copyFile, stat, readdir, rm, rmdir,
         open} from 'node:fs/promises';
 // ⚠️ `win32` במפורש ולא `path`: כל הנתיבים כאן הם נתיבי ווינדוס עם `\`,
 // כי `mirror_store.js` בונה אותם כך והם נשמרים כך בקטלוג. מימוש שהיה
@@ -105,6 +105,19 @@ export const fs = {
   async remove(path) {
     await rm(path, {force: true});
     return true;
+  },
+
+  // כמו ב-host: **ריקה בלבד**, ולא רקורסיבית. תיקייה שנשאר בה תוכן
+  // חוזרת `false`, כדי שגריעה לא תיקח איתה תמונה או בילד שבקטלוג.
+  async removeDir(path) {
+    try {
+      await rmdir(path);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      if (error.code === 'ENOTEMPTY' || error.code === 'EEXIST') return false;
+      throw error;
+    }
   },
 
   async copy(from, to) {

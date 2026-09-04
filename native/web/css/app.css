@@ -1434,9 +1434,11 @@
   cursor: pointer;
 }
 
-/* "הקודם" בעברית הוא בצד הימני. */
-.lightbox__nav--prev { inset-inline-end: var(--space-md); }
-.lightbox__nav--next { inset-inline-start: var(--space-md); }
+/* "הקודם" בעברית הוא בצד הימני — כלומר `inset-inline-start`, ושם יושב
+ * גם החץ שמצביע ימינה (`chevron-right`). בהיפוך היו שני החצים מצביעים
+ * זה אל זה, והכפתור הימני היה מקדם. */
+.lightbox__nav--prev { inset-inline-start: var(--space-md); }
+.lightbox__nav--next { inset-inline-end: var(--space-md); }
 
 .lightbox__counter {
   position: absolute;
