@@ -6,6 +6,11 @@
 // של WebView2 מקושר סטטית, וקובצי הממשק יושבים כ-resource בתוך ה-exe.
 // מה שנוצר ליד התוכנה זו **רק** תיקיית `Data\`.
 //
+// היוצא היחיד מהכלל הוא ה**חבילה** — אותו exe בדיוק עם מראה של ~‎96MB
+// משורשרת לסופו, בשביל מחשב מנותק. גם היא אינה מתקינה דבר: היא פורסת
+// את `Data\`, כותבת לצדה את אותו exe בלי המטען, מפעילה אותו ויוצאת.
+// ראו [RunOverlaySetup] כאן ו-overlay.h.
+//
 // ── החלון חסר-המסגרת ─────────────────────────────────────────────────────────
 // הסגנון הוא `WS_POPUP | WS_THICKFRAME`: בלי `WS_CAPTION`, ולכן DWM אינו
 // מצייר שורת כותרת בכלל, ועם מסגרת עבה שנותנת את הצל ואת פינות ווינדוס 11.
@@ -43,6 +48,7 @@
 #include "WebView2.h"
 #include "bridge.h"
 #include "netapi.h"
+#include "overlay.h"
 #include "paths.h"
 #include "resource.h"
 #include "sysapi.h"
@@ -241,6 +247,136 @@ bool ReadDataFile(const std::wstring& relative, std::vector<uint8_t>& out) {
   }
   CloseHandle(file);
   out.resize(done);
+  return true;
+}
+
+// ── פריסת החבילה ─────────────────────────────────────────────────────────────
+// רץ **לפני** שה-WebView2 עולה, וברוב ההרצות אינו רץ בכלל: ה-exe הרזה
+// אינו נושא מטען, ו-[HasOverlay] חוזר `false` אחרי קריאה של 96 בייט.
+
+// שם קובץ ההרצה הרזה שנכתב לצד החבילה. חייב להתאים ל-`$appFileName`
+// שב-native/build.ps1 ול-`OriginalFilename` שב-app.rc — זה אותו קובץ.
+constexpr wchar_t kSlimExeName[] = L"חנות התוספים.exe";
+
+// מריץ את הפריסה אם צריך. `true` = התוכנה סיימה את תפקידה בהרצה הזאת
+// ועליה לצאת עם [exit_code]; `false` = להמשיך ולעלות כרגיל.
+bool RunOverlaySetup(HINSTANCE instance, const OverlayInfo& overlay,
+                     int& exit_code) {
+  const std::wstring exe_path = ExecutablePath();
+  const std::wstring stamp_path = JoinPath(g_paths.data_dir, kStampFileName);
+
+  // כבר נפרסה. קורה כשמריצים את החבילה עצמה פעם שנייה — ואז היא פשוט
+  // חנות רגילה שבמקרה שוקלת ‎96MB.
+  StampFile existing;
+  if (ReadStampFile(stamp_path, existing) && existing.stamp == overlay.stamp) {
+    LogInfo(L"החבילה כבר פרוסה — ממשיכים כרגיל");
+    return false;
+  }
+
+  // ⚠️ הפריסה **חייבת** את התיקייה שליד ה-exe: `Data\` אינה ניתנת
+  // להזזה (ראו paths.h), ולכן אין כאן מסלול חלופי לתיקיית המשתמש.
+  // כשל שקט כאן היה משאיר את המשתמש עם חנות ריקה בלי לדעת למה.
+  if (!g_paths.error.empty() || g_paths.read_only) {
+    LogError(L"אי אפשר לפרוס את החבילה — התיקייה אינה כותבת: " +
+             g_paths.data_dir);
+    const std::wstring message =
+        L"החנות נושאת איתה את כל קובצי התוספים, וכדי לפרוס אותם היא צריכה "
+        L"לכתוב לתיקייה שלידה:\n" +
+        g_paths.data_dir +
+        L"\n\nהמיקום הזה אינו מאפשר כתיבה. יש להעתיק את הקובץ למקום שניתן "
+        L"לכתוב בו — למשל לתיקיית ההורדות או לכונן נייד — ולהריץ אותו משם.";
+    MessageBoxW(nullptr, message.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+    exit_code = 1;
+    return true;
+  }
+
+  LogInfo(L"פריסת החבילה מתחילה");
+  ProgressWindow progress;
+  progress.Create(instance, kWindowTitle,
+                  L"מכינה את חנות התוספים להרצה ראשונה…");
+
+  // ── הניקוי ────────────────────────────────────────────────────────────
+  // ⚠️ **סדר הפעולות כאן הוא ההגנה כולה.** החותמת נמחקת ראשונה: פריסה
+  // שתיקטע אחרי שהמראה כבר נמחקה אבל לפני שהחדשה נחתה חייבת להיראות
+  // בהרצה הבאה כ"לא נפרס", ולא כ"נפרסה החבילה הקודמת".
+  DeleteFileW(stamp_path.c_str());
+
+  // המראה היא **נגזרת** של החבילה ולא נתוני משתמש, וההחלפה סיטונית:
+  // מה ששורד מפריסה קודמת הוא תוספים שכבר אינם בקטלוג הזה, שהיו נשארים
+  // בתיקייה לנצח.
+  //
+  // ⚠️ נמחקים **רק** שני אלה. `state.json` ו-`logs\` יושבים באותה
+  // תיקייה בדיוק (ראו paths.h) והם מקומיים למכונה — מה שזוהה על התקנת
+  // אוצריא שבמחשב הזה, ומה שקרה בהרצות הקודמות. מחיקה שלהם הייתה גורמת
+  // לזיהוי מחדש בכל עדכון חבילה, ומוחקת בדיוק את היומן שמסביר תקלה.
+  RemoveTree(g_paths.PluginsDir());
+  DeleteFileW(g_paths.CatalogPath().c_str());
+
+  // ── הפריסה ────────────────────────────────────────────────────────────
+  std::wstring error;
+  const bool extracted = ExtractOverlay(
+      exe_path, overlay, g_paths.data_dir,
+      [&progress](uint64_t done, uint64_t total) { progress.Update(done, total); },
+      error);
+  if (!extracted) {
+    progress.Close();
+    LogError(L"פריסת החבילה נכשלה: " + error);
+    MessageBoxW(nullptr,
+                (L"פריסת קובצי החנות נכשלה.\n\n" + error).c_str(), kWindowTitle,
+                MB_ICONERROR | MB_OK);
+    exit_code = 1;
+    return true;
+  }
+
+  // ── החותמת, אחרונה ────────────────────────────────────────────────────
+  // רק עכשיו, אחרי שהקובץ האחרון נחת. השורה השנייה היא הנתיב של החבילה
+  // עצמה — זה מה שמאפשר ל-exe הרזה להציע למשתמש למחוק אותה (ראו
+  // `installerPath` ב-bridge.cpp).
+  StampFile stamp;
+  stamp.stamp = overlay.stamp;
+  stamp.installer = exe_path;
+  if (!WriteStampFile(stamp_path, stamp, error)) {
+    progress.Close();
+    LogError(L"כתיבת החותמת נכשלה: " + error);
+    MessageBoxW(nullptr, error.c_str(), kWindowTitle, MB_ICONERROR | MB_OK);
+    exit_code = 1;
+    return true;
+  }
+
+  // ── העותק הרזה ────────────────────────────────────────────────────────
+  const std::wstring slim = JoinPath(ExecutableDir(), kSlimExeName);
+
+  // ⚠️ החבילה **היא** התהליך שרץ עכשיו, ובווינדוס אי אפשר לכתוב לקובץ
+  // ההרצה של תהליך רץ. זה קורה כשמישהו שינה לחבילה את שמה לשם של ה-exe
+  // הרזה: אין למי למסור את השרביט, והתשובה הנכונה היא פשוט להמשיך
+  // ולעלות — התוכנה כאן עובדת, היא רק גדולה.
+  if (lstrcmpiW(slim.c_str(), exe_path.c_str()) == 0) {
+    progress.Close();
+    LogInfo(L"החבילה כבר נושאת את שם ה-exe הרזה — ממשיכים בלי עותק");
+    return false;
+  }
+
+  if (!WriteSlimCopy(exe_path, overlay.data_offset, slim, error)) {
+    progress.Close();
+    LogError(L"כתיבת העותק הרזה נכשלה: " + error);
+    MessageBoxW(nullptr,
+                (L"כתיבת קובץ ההרצה של החנות נכשלה.\n\n" + error).c_str(),
+                kWindowTitle, MB_ICONERROR | MB_OK);
+    exit_code = 1;
+    return true;
+  }
+
+  // ── מסירת השרביט ──────────────────────────────────────────────────────
+  progress.Close();
+  if (!LaunchAndForget(slim, error)) {
+    // ההרצה נכשלה אבל הכול כבר על הדיסק — עדיף להמשיך ולעלות מכאן מאשר
+    // להציג שגיאה על תוכנה שבפועל מוכנה לגמרי.
+    LogError(L"הרצת העותק הרזה נכשלה, ממשיכים בתהליך הזה: " + error);
+    return false;
+  }
+
+  LogInfo(L"הפריסה הסתיימה — השרביט נמסר ל-" + slim);
+  exit_code = 0;
   return true;
 }
 
@@ -655,6 +791,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
   }
   if (g_paths.read_only) {
     LogInfo(L"הכונן לקריאה בלבד — היומן והמצב נכתבים ל-" + g_paths.state_dir);
+  }
+
+  // ── החבילה, לפני כל השאר ──────────────────────────────────────────────────
+  // חייב לרוץ לפני שה-WebView2 עולה: הממשק קורא את `Data\` מיד בעלייתו,
+  // ואם היא עומדת להיפרס אין טעם שהוא יראה אותה קודם. ברוב ההרצות זו
+  // קריאה של 96 בייט שחוזרת ריקה.
+  OverlayInfo overlay;
+  if (HasOverlay(ExecutablePath(), overlay)) {
+    int exit_code = 0;
+    if (RunOverlaySetup(instance, overlay, exit_code)) return exit_code;
   }
 
   g_dark_mode = sysapi::IsSystemDarkMode();

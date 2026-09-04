@@ -46,6 +46,12 @@ const OUR_OWN_EXE_NAMES = new Set([
   'otzaria-updates',
   'otzaria_plugin_store',
   'otzaria-plugin-store',
+  // ⚠️ **גם החבילה המלאה.** `nameLooksLikeOtzaria` מתאים ל-`otzaria`
+  // הלטיני, וקובץ ההתקנה של החבילה שנשאר בתיקייה נסרקת (מישהו הריץ
+  // אותו בתוך `C:\אוצריא`) היה נבחר שם כהתקנה של אוצריא עצמה — והחנות
+  // הייתה מציעה להתקין תוספים לתוך עצמה. הוא **אינו** מכוסה ע"י
+  // `selfPath`: מה שרץ אחרי הפריסה הוא ה-exe הרזה, לא הוא.
+  'otzaria-plugin-store-full',
   'חנות התוספים',
 ]);
 

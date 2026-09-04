@@ -3,6 +3,7 @@
 #include "common.h"
 #include "fsapi.h"
 #include "netapi.h"
+#include "overlay.h"
 #include "sysapi.h"
 
 namespace otz {
@@ -27,6 +28,39 @@ std::wstring Arg(const std::vector<std::wstring>& fields, size_t index) {
   // fields[0] הוא ה-reqId ו-fields[1] הפקודה; הארגומנטים מתחילים ב-2.
   const size_t at = index + 2;
   return at < fields.size() ? fields[at] : std::wstring{};
+}
+
+// נתיב חבילת ההתקנה הגדולה שממנה נפרסה המראה, כשהיא עדיין יושבת לצד
+// ה-exe. ריק = אין מה להציע.
+//
+// זה מה שמאפשר לממשק להציע למשתמש למחוק ~‎96MB שאין בהם עוד שום צורך:
+// המראה כבר על הדיסק, וקובץ ההרצה הרזה שרץ עכשיו הוא כל מה שדרוש.
+// המחיקה עצמה נעשית ב-JS דרך `fs.remove` — אין כאן פקודה חדשה, כי זו
+// מחיקת קובץ יחיד ככל מחיקת קובץ אחרת.
+std::wstring InstallerPath(const AppPaths& paths) {
+  StampFile stamp;
+  if (!ReadStampFile(JoinPath(paths.data_dir, kStampFileName), stamp)) return {};
+  if (stamp.installer.empty()) return {};
+
+  // הנתיב נרשם מלא, אבל **מורכב מחדש** מול התיקייה של ה-exe הנוכחי:
+  // התיקייה כולה (ה-exe, החבילה ו-`Data\`) נועדה לנסוע לכונן נייד, ואז
+  // הנתיב המוחלט שנרשם במחשב האחר כבר אינו קיים — בעוד שהקובץ עצמו
+  // יושב בדיוק במקום שהובטח, ליד התוכנה.
+  const size_t slash = stamp.installer.find_last_of(L"\\/");
+  const std::wstring name = slash == std::wstring::npos
+                                ? stamp.installer
+                                : stamp.installer.substr(slash + 1);
+  if (name.empty()) return {};
+  const std::wstring path = JoinPath(ExecutableDir(), name);
+
+  // ⚠️ אנחנו עצמנו. קורה כשמריצים שוב את החבילה אחרי שהיא כבר נפרסה —
+  // ואין להציע למשתמש למחוק את הקובץ שהוא מריץ ברגע זה.
+  if (lstrcmpiW(path.c_str(), ExecutablePath().c_str()) == 0) return {};
+
+  const DWORD attributes = GetFileAttributesW(path.c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES) return {};
+  if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) return {};
+  return path;
 }
 
 long long ArgNumber(const std::vector<std::wstring>& fields, size_t index,
@@ -291,6 +325,10 @@ void Bridge::HandleMessage(const std::wstring& message) {
                             {"stateDir", JsonString(paths_.state_dir)},
                             {"stateFile", JsonString(paths_.StateFilePath())},
                             {"exePath", JsonString(ExecutablePath())},
+                            // ריק = אין חבילת התקנה לצד ה-exe. כשיש
+                            // כאן נתיב, הממשק מציע למחוק אותה — ראו
+                            // [InstallerPath].
+                            {"installerPath", JsonString(InstallerPath(paths_))},
                             {"readOnly", JsonBool(paths_.read_only)},
                             {"darkMode", JsonBool(sysapi::IsSystemDarkMode())},
                             // ריק = הכול תקין. כשיש כאן טקסט, הממשק מציג
