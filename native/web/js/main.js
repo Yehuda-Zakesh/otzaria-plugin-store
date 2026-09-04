@@ -19,6 +19,7 @@ import {PluginsManager} from './store/plugins_manager.js';
 import {OtzariaInstallProbe} from './store/otzaria_probe.js';
 import {StoreReleaseClient, isStoreVersionNewer}
     from './store/store_release_client.js';
+import {OtzariaReleaseClient} from './store/otzaria_release_client.js';
 import {h, icon, replace} from './ui/dom.js';
 import {installIconSprite} from './ui/icons.js';
 import {actionButton, iconButton} from './ui/components.js';
@@ -120,7 +121,11 @@ async function main() {
     },
   });
 
-  const controller = new StoreController({manager, probe, log});
+  // מברר מהן גרסאות אוצריא שהמראה נבנית עבורן. נקרא **רק** כשהמשתמש
+  // מסנכרן או בודק עדכונים, ולכן העלייה עצמה נשארת בלי רשת.
+  const releaseClient = new OtzariaReleaseClient({net});
+
+  const controller = new StoreController({manager, probe, releaseClient, log});
 
   // רינדור מלא בכל שינוי מצב. המסך הוא כמה עשרות אלמנטים, והבקר הוא
   // מקור האמת היחיד — ראו ההערה בראש `ui/screens.js`.

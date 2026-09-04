@@ -890,11 +890,24 @@
 }
 
 .error-row,
-.progress-row {
+.progress-row,
+.hidden-note {
   display: flex;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md);
+}
+
+/* שורת "תוספים שאינם מוצגים" — מצב תקין, ולכן בצבע המשני ולא באזהרה. */
+.hidden-note {
+  color: var(--on-surface-variant);
+}
+
+.hidden-note__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-md);
+  overflow-wrap: anywhere;
 }
 
 .error-row {

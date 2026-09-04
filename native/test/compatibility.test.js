@@ -81,10 +81,17 @@ describe('resolveTargets', () => {
     assert.equal(targets[0].version, '3.0.0');
   });
 
-  it('בילד לכל גרסת אוצריא שהכונן נושא', () => {
+  it('בילד לכל גרסת יעד של אוצריא', () => {
     const targets = resolveTargets(entries, ['0.9.55', '0.9.70']);
     assert.deepEqual(targets.map((t) => t.version).sort(),
                      ['2.0.0', '3.0.0']);
+  });
+
+  it('מוחזר ממוין יורד, ולא בסדר הגרסאות שנמסרו', () => {
+    // הצרכנים בוחרים מהתוצאה את "הגבוה שמתאים למחשב הזה", ולכן הסדר הוא
+    // חלק מהחוזה ולא פרט מימוש.
+    const targets = resolveTargets(entries, ['0.9.55', '0.9.70']);
+    assert.deepEqual(targets.map((t) => t.version), ['3.0.0', '2.0.0']);
   });
 
   it('בלי כפילות כששתי הגרסאות נפתרות לאותו בילד', () => {

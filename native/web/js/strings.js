@@ -118,6 +118,30 @@ export const S = Object.freeze({
     noResultsBody:
         'נסו לחפש בשם אחר, להסיר תגית, לבחור סטטוס שונה, או לכבות את ' +
         '"הצג רק מה שלא מותקן".',
+    // ── תוספים שהוסתרו בגלל תאימות ─────────────────────────────────────
+    // המראה נבנית עבור מה שהריפו של אוצריא פרסם, ולא עבור המחשב הזה.
+    // תוסף שאין בה בילד שירוץ כאן אינו מוצג — ובלי השורה הזאת חנות
+    // שחסרים בה תוספים אינה ניתנת לאבחון מרחוק.
+    hiddenByCompatibility: (count, appVersion, targetVersions) => {
+      const what = count === 1
+          ? 'תוסף אחד אינו מוצג — אין במראה גרסה שלו שתואמת'
+          : `${count} תוספים אינם מוצגים — אין במראה גרסה שלהם שתואמת`;
+      const here = appVersion
+          ? `לאוצריא ${appVersion} שבמחשב הזה`
+          : 'לגרסת אוצריא שבמחשב הזה';
+      const built = targetVersions.length === 0 ? '' :
+          ` המראה נבנתה עבור אוצריא ${targetVersions.join(' ו-')}.`;
+      return `${what} ${here}.${built}`;
+    },
+    hiddenOnlyTitle: 'התוספים שבמראה אינם תואמים לאוצריא שבמחשב הזה',
+    hiddenOnlyBody: (count, appVersion, targetVersions) => {
+      const built = targetVersions.length === 0 ? '' :
+          ` המראה נבנתה עבור אוצריא ${targetVersions.join(' ו-')}.`;
+      const here = appVersion ? ` כאן מותקנת ${appVersion}.` : '';
+      return `המראה נושאת ${count} תוספים, ולאף אחד מהם אין גרסה שתרוץ ` +
+          `על אוצריא שבמחשב הזה.${built}${here} עדכון אוצריא יציג אותם.`;
+    },
+
     allInstalledTitle: 'הכול מותקן ומעודכן',
     allInstalledBody:
         'המתג "רק מה שלא מותקן" מסתיר תוספים שכבר מותקנים אצלכם בגרסה ' +

@@ -40,15 +40,19 @@ const INSTALL_WATCH_INTERVAL_MS = 1000;
 const INSTALL_WATCH_TIMEOUT_MS = 5 * 60 * 1000;
 
 export class StoreController {
-  constructor({manager, probe, log = () => {}}) {
+  constructor({manager, probe, releaseClient, log = () => {}}) {
     this.manager = manager;
     this.probe = probe;
+    /**
+     * מברר מהן גרסאות אוצריא שהמראה נבנית עבורן. נדרש **רק** למסלולים
+     * המקוונים (סנכרון והצצה); הטעינה וההתקנה אינן נוגעות בו.
+     */
+    this.releaseClient = releaseClient;
     this.log = log;
 
     this.status = Status.idle;
     this.errorMessage = null;
 
-    this.plugins = [];
     /** קטגוריות החנות בסדר שנקבע באתר. ריק במראה ישנה. */
     this.categories = [];
     this.home = PluginStoreHome.empty;
@@ -57,10 +61,17 @@ export class StoreController {
     this.pluginsDir = null;
 
     /**
-     * גרסת אוצריא שבמחשב **הזה**, ולפיה נבחר איזה בילד יוצג ויותקן.
-     * `null` = לא ידוע, ואז אין מול מה לסנן והבילד החי הוא שנבחר.
+     * גרסת אוצריא שבמחשב **הזה**. היא אינה קובעת מה יורד — היא קובעת
+     * מה **מוצג**: תוסף שאין במראה בילד שירוץ עליה אינו מופיע בחנות.
+     * `null` = לא ידוע (הזיהוי טרם הסתיים), ואז אין מול מה לסנן.
      */
     this.appVersion = null;
+
+    /**
+     * גרסאות אוצריא שהמראה נבנתה עבורן, כפי שנשמרו בקטלוג. ריק במראה
+     * שסונכרנה לפני שהשדה נוסף — ראו `StorePlugin.mirrorTargets`.
+     */
+    this.targetAppVersions = [];
 
     // ── ניווט ──────────────────────────────────────────────────────────────
     /**
@@ -95,6 +106,8 @@ export class StoreController {
     this.syncWarnings = [];
     this.syncCancelled = false;
 
+    this.#catalogPlugins = [];
+    this.#targetVersions = null;
     this.#installed = new Map();
     this.#listeners = new Set();
     this.#pendingInstalls = new Map();
@@ -104,6 +117,8 @@ export class StoreController {
     this.#invalidateDerived();
   }
 
+  #catalogPlugins;
+  #targetVersions;
   #installed;
   #listeners;
   #pendingInstalls;
@@ -175,10 +190,13 @@ export class StoreController {
     this.#notify();
 
     try {
-      // לפני הקטלוג: הגרסה היא שקובעת איזה בילד כל תוסף מציג.
+      // לפני הקטלוג: הגרסה היא שקובעת אילו תוספים בכלל מוצגים. הזיהוי
+      // רץ במקביל ועשוי לא להסתיים עדיין — `null` אינו מסתיר דבר, ומי
+      // שיסיים קורא ל-`refreshInstalled` שמסנן מחדש.
       this.appVersion = this.probe.version;
       const snapshot = await this.manager.load();
-      this.plugins = snapshot.catalog.plugins;
+      this.#catalogPlugins = snapshot.catalog.plugins;
+      this.targetAppVersions = snapshot.catalog.targetAppVersions;
       this.categories = snapshot.catalog.categories;
       this.home = snapshot.catalog.home;
       this.lastSync = snapshot.catalog.lastSync;
@@ -389,17 +407,43 @@ export class StoreController {
   }
 
   /**
-   * הגרסאות שההורדה וההצצה מסננות לפיהן.
+   * הגרסאות שההורדה וההצצה מסננות לפיהן — **מה שהריפו של אוצריא פרסם**,
+   * ולא מה שמותקן במחשב הזה.
    *
-   * **ממתין תחילה לזיהוי**: רשימה ריקה מפני שהוא עוד לא הספיק אינה "אין
-   * מול מה לסנן" אלא תשובה שגויה — ההצצה הייתה שואלת על הבילד החי,
-   * מדווחת "חסר" על מה שאינו תואם, וההורדה שאחריה לא הייתה מביאה דבר.
-   * כך הנדנוד חוזר אחרי כל הורדה.
+   * ⚠️ **למה לא הגרסה המקומית:** המראה נבנית במחשב מקוון ונצרכת במחשב
+   * אחר. סינון לפי המחשב המסנכרן פירושו כונן שנושא בילדים שאינם מתאימים
+   * למחשב היעד, ושם — בלי אינטרנט — אין דרך לתקן את זה. ראו
+   * `otzaria_release_client.js`.
+   *
+   * נשמר לכל אורך ההרצה, אבל **רק בהצלחה**: תשובה ריקה מפני שאין רשת
+   * אינה עובדה על הריפו, ואסור שתיתקע בזיכרון עד סוף ההרצה.
    */
   async #appVersions() {
-    await this.probe.ensureDetected();
-    const version = this.probe.version;
-    return version ? [version] : [];
+    if (this.#targetVersions !== null) return this.#targetVersions;
+
+    let result;
+    try {
+      result = await this.releaseClient.fetchTargetVersions();
+    } catch (error) {
+      // לא שגיאת הרצה: בלי היעד יורד הבילד האחרון של כל תוסף, וזו בדיוק
+      // ההתנהגות שהייתה לפני שהתאימות נכנסה.
+      this.log('בירור גרסת אוצריא האחרונה לא הצליח ' +
+               `(${error?.message ?? error}) — יורד הבילד האחרון של כל תוסף`);
+      return [];
+    }
+
+    if (result.versions.length === 0) {
+      this.log('לא נמצאה אף גרסה של אוצריא בריפו — ' +
+               'יורד הבילד האחרון של כל תוסף');
+      return [];
+    }
+
+    this.log(result.latestIsPrerelease
+        ? `גרסאות היעד: ${result.latest} (טרם הוגדרה כיציבה) ` +
+          `ו-${result.latestStable}`
+        : `גרסת היעד: ${result.latest}`);
+    this.#targetVersions = result.versions;
+    return result.versions;
   }
 
   // ── פעולות על תוסף בודד ──────────────────────────────────────────────────
@@ -409,7 +453,8 @@ export class StoreController {
   }
 
   statusOf(plugin) {
-    return plugin.statusAgainst(this.#installed, this.appVersion);
+    return plugin.statusAgainst(this.#installed, this.appVersion,
+                                this.targetAppVersions);
   }
 
   /** הגרסה המותקנת של התוסף, או null אם אינו מותקן. */
@@ -420,11 +465,11 @@ export class StoreController {
   }
 
   /**
-   * הבילד שיותקן במחשב הזה — לא בהכרח האחרון שפורסם. `null` = אין בילד
-   * שתואם לגרסת אוצריא שכאן.
+   * הבילד שיותקן במחשב הזה — הגבוה מבין אלה שהמראה נושאת ושתואם לגרסת
+   * אוצריא שכאן. `null` = אין כזה, וממילא התוסף אינו מוצג.
    */
   targetOf(plugin) {
-    return plugin.installTarget(this.appVersion);
+    return plugin.installTarget(this.appVersion, this.targetAppVersions);
   }
 
   /** מספר הגרסה להצגה: של הבילד שיותקן, ובחוסר — של החי בקטלוג. */
@@ -438,7 +483,8 @@ export class StoreController {
   }
 
   suggestedFileName(plugin) {
-    return this.manager.suggestedFileName(plugin, this.appVersion);
+    return this.manager.suggestedFileName(plugin, this.appVersion,
+                                          this.targetAppVersions);
   }
 
   /** נתיב מוחלט לנכס שנשמר בקטלוג כנתיב יחסי. */
@@ -447,7 +493,8 @@ export class StoreController {
   }
 
   saveCopy(plugin, destPath) {
-    return this.manager.saveCopy(plugin, destPath, this.appVersion);
+    return this.manager.saveCopy(plugin, destPath, this.appVersion,
+                                 this.targetAppVersions);
   }
 
   /**
@@ -455,7 +502,8 @@ export class StoreController {
    * נגמרת בחלון של אוצריא, ולכן מתחילים מיד להמתין לה על הדיסק.
    */
   async install(plugin) {
-    const result = await this.manager.install(plugin, this.appVersion);
+    const result = await this.manager.install(plugin, this.appVersion,
+                                              this.targetAppVersions);
     if (result.success) {
       this.watchForInstall(plugin);
     } else {
@@ -570,6 +618,30 @@ export class StoreController {
   #memo(key, compute) {
     if (!(key in this.#derived)) this.#derived[key] = compute();
     return this.#derived[key];
+  }
+
+  /**
+   * התוספים שיש מה להציע להם במחשב הזה — **מקור האמת לכל המסכים**.
+   *
+   * תוסף שאין במראה בילד שירוץ על גרסת אוצריא שכאן אינו מוצג כלל: לא
+   * בדף הבית, לא בקטגוריה, לא בחיפוש ולא ברשימת התגיות. הצגתו הייתה
+   * מייצרת כפתור התקנה שאין לו קובץ, ובמחשב לא-מקוון גם אין דרך להשיגו.
+   *
+   * גרסה מקומית שאינה ידועה (הזיהוי טרם הסתיים, או שאוצריא לא נמצאה)
+   * אינה מסתירה דבר — ראו `isCompatibleWithApp`.
+   */
+  get plugins() {
+    return this.#memo('plugins', () => this.#catalogPlugins.filter(
+        (plugin) => plugin.runsOn(this.appVersion, this.targetAppVersions)));
+  }
+
+  /**
+   * כמה תוספים הוסתרו בגלל תאימות. מוצג כשורת הסבר אחת בתחתית הרשימה:
+   * חנות שחסרים בה תוספים בלי שנאמר למה אינה ניתנת לאבחון מרחוק, וזו
+   * בדיוק השאלה שמגיעה מהמשתמשים.
+   */
+  get hiddenCount() {
+    return this.#catalogPlugins.length - this.plugins.length;
   }
 
   /**

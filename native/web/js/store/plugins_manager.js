@@ -96,15 +96,16 @@ export class PluginsManager {
   }
 
   /** שם הקובץ המוצע לשמירה, לפי מה שהאתר החזיר ב-Content-Disposition. */
-  suggestedFileName(plugin, appVersion) {
-    const local = plugin.localFileFor(plugin.installTarget(appVersion)?.version)
-        ?? plugin.anyLocalFile;
+  suggestedFileName(plugin, appVersion, targetAppVersions = []) {
+    const target = plugin.installTarget(appVersion, targetAppVersions);
+    const local = plugin.localFileFor(target?.version) ?? plugin.anyLocalFile;
     return local?.fileName ?? `${plugin.name}${local?.ext ?? '.otzplugin'}`;
   }
 
   /** מעתיק את קובץ ה-.otzplugin ליעד שהמשתמש בחר. */
-  async saveCopy(plugin, destPath, appVersion) {
-    const local = plugin.localFileFor(plugin.installTarget(appVersion)?.version);
+  async saveCopy(plugin, destPath, appVersion, targetAppVersions = []) {
+    const target = plugin.installTarget(appVersion, targetAppVersions);
+    const local = plugin.localFileFor(target?.version);
     if (local === null || !await this.store.hasAsset(local.relativePath)) {
       return failure(S.domain.fileNotAvailableSyncFirst);
     }
@@ -128,8 +129,8 @@ export class PluginsManager {
    * אם קובץ התוסף חסר מהמראה הוא מורד עכשיו — וזה הצעד היחיד כאן שדורש
    * אינטרנט.
    */
-  async install(plugin, appVersion) {
-    const target = plugin.installTarget(appVersion);
+  async install(plugin, appVersion, targetAppVersions = []) {
+    const target = plugin.installTarget(appVersion, targetAppVersions);
     if (target === null) return failure(S.domain.noCompatibleBuild);
 
     let local = plugin.localFileFor(target.version);
